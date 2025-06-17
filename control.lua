@@ -348,6 +348,53 @@ end
 --   end
 -- end
 
+function context_extractors.on_player_setup_blueprint(e, rec, player)
+  rec.action = "blueprint_setup"
+  if e.area then
+    rec.area_x1 = e.area.left_top.x
+    rec.area_y1 = e.area.left_top.y
+    rec.area_x2 = e.area.right_bottom.x
+    rec.area_y2 = e.area.right_bottom.y
+  end
+  if e.item then
+    rec.item = e.item
+  end
+  if e.entities and #e.entities > 0 then
+    rec.entity_count = #e.entities
+  end
+end
+
+function context_extractors.on_player_configured_blueprint(e, rec, player)
+  rec.action = "blueprint_confirmed"
+  -- Unfortunately, this event has limited data available
+end
+
+function context_extractors.on_player_cancelled_crafting(e, rec, player)
+  rec.action = "cancel_craft"
+  if e.recipe then
+    rec.recipe = e.recipe.name
+  end
+  if e.cancel_count then
+    rec.cancel_count = e.cancel_count
+  end
+end
+
+function context_extractors.on_player_deconstructed_area(e, rec, player)
+  rec.action = "deconstruct_area"
+  if e.area then
+    rec.area_x1 = e.area.left_top.x
+    rec.area_y1 = e.area.left_top.y
+    rec.area_x2 = e.area.right_bottom.x
+    rec.area_y2 = e.area.right_bottom.y
+  end
+  if e.item then
+    rec.item = e.item
+  end
+  if e.alt ~= nil then
+    rec.alt_mode = e.alt
+  end
+end
+
 function context_extractors.get_extractor(evt_name)
   return context_extractors[evt_name] or function() end -- Default no-op
 end
