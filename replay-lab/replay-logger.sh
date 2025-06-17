@@ -38,6 +38,18 @@ fi
 
 echo "✓ Found replay.dat in target directory"
 
+# Check if control.lua exists in the project root
+CONTROL_LUA_SOURCE="./control.lua"
+if [ ! -f "$CONTROL_LUA_SOURCE" ]; then
+    echo "Error: control.lua not found in current directory"
+    exit 1
+fi
+
+# Copy control.lua to the target directory
+echo "Copying control.lua to target directory..."
+cp "$CONTROL_LUA_SOURCE" "$TARGET_DIR/"
+echo "✓ Copied control.lua to $TARGET_DIR"
+
 # Get the parent directory and basename
 PARENT_DIR="$(dirname "$TARGET_DIR")"
 BASE_NAME="$(basename "$TARGET_DIR")"
@@ -53,6 +65,10 @@ fi
 echo "Creating zip file: $ZIP_NAME"
 (cd "$PARENT_DIR" && zip -q -r "../$ZIP_NAME" "./$BASE_NAME/")
 echo "✓ Created zip file: $ZIP_NAME"
+
+# Calculate and display hash of the zip file
+ZIP_HASH=$(shasum -a 256 "$ZIP_NAME" | cut -d' ' -f1)
+echo "📋 ZIP Hash (SHA256): $ZIP_HASH"
 
 # Define factorio saves directory
 FACTORIO_SAVES="$HOME/Library/Application Support/factorio/saves/"
@@ -72,5 +88,7 @@ echo "✓ Cleaned up local zip file"
 
 echo ""
 echo "🎉 Operation completed successfully!"
+echo "   - Copied control.lua to save directory"
 echo "   - Zipped $BASE_NAME as $ZIP_NAME with correct directory structure"
+echo "   - ZIP Hash: $ZIP_HASH"
 echo "   - Deployed to Factorio saves directory"
