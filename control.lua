@@ -55,6 +55,97 @@ function utils.clean_record(rec)
 end
 
 -- ============================================================================
+-- BLUEPRINT UTILITIES MODULE
+-- ============================================================================
+local blueprint_utils = {}
+
+function blueprint_utils.extract_blueprint_data(bp_stack, tag)
+  -- Safety checks
+  if not (bp_stack and bp_stack.valid_for_read and bp_stack.is_blueprint_setup()) then
+    return nil -- Nothing to extract
+  end
+  
+  local success, bp_data = pcall(function()
+    -- Extract blueprint data safely
+    local data = {}
+    
+    -- Basic metadata
+    data.bp_phase = tag
+    data.bp_label = bp_stack.label or ""
+    
+    -- Blueprint string (safe for export/import)
+    local export_success, bp_string = pcall(function()
+      return bp_stack.export_stack()
+    end)
+    if export_success and bp_string then
+      data.bp_string = bp_string
+    end
+    
+    -- Entity data
+    local entities_success, entities = pcall(function()
+      return bp_stack.get_blueprint_entities() or {}
+    end)
+    if entities_success and entities then
+      data.bp_entity_count = #entities
+      -- Store first few entities for quick inspection (limit to avoid huge logs)
+      if #entities > 0 then
+        data.bp_sample_entities = {}
+        for i = 1, math.min(3, #entities) do
+          local ent = entities[i]
+          if ent and ent.name then
+            table.insert(data.bp_sample_entities, {
+              name = ent.name,
+              position = ent.position
+            })
+          end
+        end
+      end
+    end
+    
+    -- Tile data
+    local tiles_success, tiles = pcall(function()
+      return bp_stack.get_blueprint_tiles and bp_stack.get_blueprint_tiles() or {}
+    end)
+    if tiles_success and tiles then
+      data.bp_tile_count = #tiles
+    end
+    
+    return data
+  end)
+  
+  if not success then
+    -- Log the error but don't crash
+    log("[blueprint-logger] Error extracting blueprint data: " .. tostring(bp_data))
+    return nil
+  end
+  
+  return bp_data
+end
+
+function blueprint_utils.get_blueprint_stack_safely(event, player)
+  -- Try multiple sources for the blueprint stack based on event type
+  local stack = nil
+  
+  if event.stack then
+    -- Direct stack from event (on_player_setup_blueprint in v1.1+)
+    stack = event.stack
+  elseif player and player.blueprint_to_setup then
+    -- Fallback for setup phase
+    stack = player.blueprint_to_setup
+  elseif player and player.cursor_stack then
+    -- For configured blueprint (usually in cursor)
+    stack = player.cursor_stack
+  end
+  
+  -- Validate the stack
+  if stack and stack.valid_for_read and stack.is_blueprint_setup and stack.is_blueprint_setup() then
+    return stack
+  end
+  
+  return nil
+end
+
+-- ============================================================================
 -- PLAYER VALIDATOR MODULE
 -- ============================================================================
 local player_validator = {}
@@ -357,10 +448,10 @@ end
 function context_extractors.on_player_setup_blueprint(e, rec, player)
   rec.action = "blueprint_setup"
   if e.area then
-    rec.area_x1 = e.area.left_top.x
-    rec.area_y1 = e.area.left_top.y
-    rec.area_x2 = e.area.right_bottom.x
-    rec.area_y2 = e.area.right_bottom.y
+    rec.area_x1 = string.format("%.1f", e.area.left_top.x)
+    rec.area_y1 = string.format("%.1f", e.area.left_top.y)
+    rec.area_x2 = string.format("%.1f", e.area.right_bottom.x)
+    rec.area_y2 = string.format("%.1f", e.area.right_bottom.y)
   end
   if e.item then
     rec.item = e.item
@@ -368,11 +459,34 @@ function context_extractors.on_player_setup_blueprint(e, rec, player)
   if e.entities and #e.entities > 0 then
     rec.entity_count = #e.entities
   end
+  
+  -- Extract and integrate blueprint data directly into the event record
+  local bp_stack = blueprint_utils.get_blueprint_stack_safely(e, player)
+  if bp_stack then
+    local bp_data = blueprint_utils.extract_blueprint_data(bp_stack, "setup")
+    if bp_data then
+      -- Merge blueprint data into the main event record
+      for key, value in pairs(bp_data) do
+        rec[key] = value
+      end
+    end
+  end
 end
 
 function context_extractors.on_player_configured_blueprint(e, rec, player)
   rec.action = "blueprint_confirmed"
-  -- Unfortunately, this event has limited data available
+  
+  -- Extract and integrate blueprint data directly into the event record
+  local bp_stack = blueprint_utils.get_blueprint_stack_safely(e, player)
+  if bp_stack then
+    local bp_data = blueprint_utils.extract_blueprint_data(bp_stack, "confirm")
+    if bp_data then
+      -- Merge blueprint data into the main event record
+      for key, value in pairs(bp_data) do
+        rec[key] = value
+      end
+    end
+  end
 end
 
 function context_extractors.on_player_cancelled_crafting(e, rec, player)
@@ -388,10 +502,10 @@ end
 function context_extractors.on_player_deconstructed_area(e, rec, player)
   rec.action = "deconstruct_area"
   if e.area then
-    rec.area_x1 = e.area.left_top.x
-    rec.area_y1 = e.area.left_top.y
-    rec.area_x2 = e.area.right_bottom.x
-    rec.area_y2 = e.area.right_bottom.y
+    rec.area_x1 = string.format("%.1f", e.area.left_top.x)
+    rec.area_y1 = string.format("%.1f", e.area.left_top.y)
+    rec.area_x2 = string.format("%.1f", e.area.right_bottom.x)
+    rec.area_y2 = string.format("%.1f", e.area.right_bottom.y)
   end
   if e.item then
     rec.item = e.item
