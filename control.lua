@@ -1,18 +1,23 @@
-local function get_item_info(stack)
+-- ============================================================================
+-- UTILITY FUNCTIONS MODULE
+-- ============================================================================
+local utils = {}
+
+function utils.get_item_info(stack)
   if not stack or not stack.valid_for_read then
     return nil, nil
   end
   return stack.name, stack.count
 end
 
-local function get_entity_info(entity)
+function utils.get_entity_info(entity)
   if not entity or not entity.valid then
     return nil
   end
   return entity.name
 end
 
-local function get_player_context(player)
+function utils.get_player_context(player)
   if not player or not player.valid then
     return {}
   end
@@ -39,114 +44,22 @@ local function get_player_context(player)
   return context
 end
 
-local function log_evt(evt_name, e)
-  local player = e.player_index and game.players[e.player_index]
-  
-  -- Build enhanced record with context
-  local rec = {
-    t  = e.tick,
-    p  = e.player_index,
-    ev = evt_name,
-  }
-  
-  -- Add position if available in event
-  if e.position then
-    rec.x = string.format("%.1f", e.position.x)
-    rec.y = string.format("%.1f", e.position.y)
-  end
-  
-  -- Add entity info if available
-  if e.entity then
-    rec.ent = get_entity_info(e.entity)
-  end
-  
-  -- Add item/stack info if available
-  if e.stack then
-    rec.itm, rec.cnt = get_item_info(e.stack)
-  elseif e.item_stack then
-    rec.itm, rec.cnt = get_item_info(e.item_stack)
-  end
-  
-  -- Event-specific context extraction
-  if evt_name == "on_player_cursor_stack_changed" then
-    local ctx = get_player_context(player)
-    rec.cursor_item = ctx.cursor_item
-    rec.cursor_count = ctx.cursor_count
-    
-  elseif evt_name == "on_player_main_inventory_changed" then
-    -- Skip logging this - too noisy and usually consequence of other actions
-    return
-    
-  elseif evt_name == "on_player_pipette" then
-    rec.pipette_item = e.item and e.item.name
-    
-  elseif evt_name == "on_built_entity" or evt_name == "on_player_built_entity" then
-    rec.action = "build"
-    -- Item info is usually in created_entity for these events
-    if e.created_entity then
-      rec.ent = get_entity_info(e.created_entity)
-    end
-    
-  elseif evt_name == "on_player_mined_entity" then
-    rec.action = "mine"
-    if e.buffer then
-      -- Log what was gained from mining
-      local items = {}
-      for i = 1, #e.buffer do
-        local stack = e.buffer[i]
-        if stack and stack.valid_for_read then
-          table.insert(items, stack.name .. ":" .. stack.count)
-        end
-      end
-      if #items > 0 then
-        rec.gained = table.concat(items, ",")
-      end
-    end
-    
-  elseif evt_name == "on_player_crafted_item" then
-    rec.action = "craft"
-    rec.recipe = e.recipe and e.recipe.name
-    
-  elseif evt_name == "on_gui_click" then
-    rec.gui_element = e.element and e.element.name
-    rec.button = e.button -- left/right/middle click
-    
-  elseif evt_name == "on_research_started" then
-    rec.action = "research_start"
-    rec.tech = e.research and e.research.name
-    
-  elseif evt_name == "on_research_finished" then
-    rec.action = "research_done"
-    rec.tech = e.research and e.research.name
-    
-  elseif evt_name == "on_console_chat" then
-    rec.msg = e.message
-    
-  elseif evt_name == "on_player_driving_changed_state" then
-    rec.action = e.entity and "enter_vehicle" or "exit_vehicle"
-    
-  end
-  
-  -- Add player context for location-based events
-  if not rec.x and not rec.y and player then
-    local ctx = get_player_context(player)
-    rec.x = ctx.px
-    rec.y = ctx.py
-  end
-  
-  -- Clean up nil values to make logs cleaner
+function utils.clean_record(rec)
   local clean_rec = {}
   for k, v in pairs(rec) do
     if v ~= nil then
       clean_rec[k] = v
     end
   end
-  
-  log(game.table_to_json(clean_rec))
+  return clean_rec
 end
 
--- Function to check if an event is player-initiated
-local function is_player_event(e)
+-- ============================================================================
+-- PLAYER VALIDATOR MODULE
+-- ============================================================================
+local player_validator = {}
+
+function player_validator.is_player_event(e)
   if not e.player_index then
     return false
   end
@@ -159,8 +72,12 @@ local function is_player_event(e)
   return true
 end
 
--- Curated list of meaningful player events (excluding noisy ones)
-local player_events = {
+-- ============================================================================
+-- EVENT REGISTRY MODULE
+-- ============================================================================
+local event_registry = {}
+
+event_registry.tracked_events = {
   -- Core building/mining actions
   defines.events.on_built_entity,
   defines.events.on_player_built_entity,
@@ -210,30 +127,204 @@ local player_events = {
   defines.events.on_player_rotated_entity,
 }
 
--- Subscribe to filtered events
-for _, event_id in pairs(player_events) do
-  script.on_event(event_id, function(e)
-    if is_player_event(e) then
-      -- Get event name
-      local evt_name = nil
-      for name, id in pairs(defines.events) do
-        if id == event_id then
-          evt_name = name
-          break
-        end
-      end
-      
-      if evt_name then
-        log_evt(evt_name, e)
-      end
+function event_registry.get_event_name(event_id)
+  for name, id in pairs(defines.events) do
+    if id == event_id then
+      return name
     end
-  end)
+  end
+  return nil
 end
 
+-- ============================================================================
+-- CONTEXT EXTRACTORS MODULE
+-- ============================================================================
+local context_extractors = {}
+
+function context_extractors.on_player_cursor_stack_changed(e, rec, player)
+  local ctx = utils.get_player_context(player)
+  rec.cursor_item = ctx.cursor_item
+  rec.cursor_count = ctx.cursor_count
+end
+
+function context_extractors.on_player_main_inventory_changed(e, rec, player)
+  -- Skip logging this - too noisy and usually consequence of other actions
+  return false -- Signal to skip this event
+end
+
+function context_extractors.on_player_pipette(e, rec, player)
+  rec.pipette_item = e.item and e.item.name
+end
+
+function context_extractors.on_built_entity(e, rec, player)
+  rec.action = "build"
+  -- Item info is usually in created_entity for these events
+  if e.created_entity then
+    rec.ent = utils.get_entity_info(e.created_entity)
+  end
+end
+
+function context_extractors.on_player_built_entity(e, rec, player)
+  rec.action = "build"
+  -- Item info is usually in created_entity for these events
+  if e.created_entity then
+    rec.ent = utils.get_entity_info(e.created_entity)
+  end
+end
+
+function context_extractors.on_player_mined_entity(e, rec, player)
+  rec.action = "mine"
+  if e.buffer then
+    -- Log what was gained from mining
+    local items = {}
+    for i = 1, #e.buffer do
+      local stack = e.buffer[i]
+      if stack and stack.valid_for_read then
+        table.insert(items, stack.name .. ":" .. stack.count)
+      end
+    end
+    if #items > 0 then
+      rec.gained = table.concat(items, ",")
+    end
+  end
+end
+
+function context_extractors.on_player_crafted_item(e, rec, player)
+  rec.action = "craft"
+  rec.recipe = e.recipe and e.recipe.name
+end
+
+function context_extractors.on_gui_click(e, rec, player)
+  rec.gui_element = e.element and e.element.name
+  rec.button = e.button -- left/right/middle click
+end
+
+function context_extractors.on_research_started(e, rec, player)
+  rec.action = "research_start"
+  rec.tech = e.research and e.research.name
+end
+
+function context_extractors.on_research_finished(e, rec, player)
+  rec.action = "research_done"
+  rec.tech = e.research and e.research.name
+end
+
+function context_extractors.on_console_chat(e, rec, player)
+  rec.msg = e.message
+end
+
+function context_extractors.on_player_driving_changed_state(e, rec, player)
+  rec.action = e.entity and "enter_vehicle" or "exit_vehicle"
+end
+
+function context_extractors.get_extractor(evt_name)
+  return context_extractors[evt_name] or function() end -- Default no-op
+end
+
+-- ============================================================================
+-- LOGGER MODULE
+-- ============================================================================
+local logger = {}
+
+function logger.emit(record)
+  log(game.table_to_json(record))
+end
+
+function logger.create_base_record(evt_name, e)
+  local rec = {
+    t  = e.tick,
+    p  = e.player_index,
+    ev = evt_name,
+  }
+  
+  -- Add position if available in event
+  if e.position then
+    rec.x = string.format("%.1f", e.position.x)
+    rec.y = string.format("%.1f", e.position.y)
+  end
+  
+  -- Add entity info if available
+  if e.entity then
+    rec.ent = utils.get_entity_info(e.entity)
+  end
+  
+  -- Add item/stack info if available
+  if e.stack then
+    rec.itm, rec.cnt = utils.get_item_info(e.stack)
+  elseif e.item_stack then
+    rec.itm, rec.cnt = utils.get_item_info(e.item_stack)
+  end
+  
+  return rec
+end
+
+function logger.add_player_context_if_missing(rec, player)
+  -- Add player context for location-based events if not already present
+  if not rec.x and not rec.y and player then
+    local ctx = utils.get_player_context(player)
+    rec.x = ctx.px
+    rec.y = ctx.py
+  end
+end
+
+function logger.log_event(evt_name, e)
+  local player = e.player_index and game.players[e.player_index]
+  
+  -- Create base record
+  local rec = logger.create_base_record(evt_name, e)
+  
+  -- Apply event-specific context extraction
+  local extractor = context_extractors.get_extractor(evt_name)
+  local should_log = extractor(e, rec, player)
+  
+  -- Check if event should be skipped
+  if should_log == false then
+    return
+  end
+  
+  -- Add player context if missing
+  logger.add_player_context_if_missing(rec, player)
+  
+  -- Clean up nil values and emit
+  local clean_rec = utils.clean_record(rec)
+  logger.emit(clean_rec)
+end
+
+-- ============================================================================
+-- MAIN MODULE - EVENT REGISTRATION AND GLUE CODE
+-- ============================================================================
+local main = {}
+
+function main.register_event_handlers()
+  for _, event_id in pairs(event_registry.tracked_events) do
+    script.on_event(event_id, function(e)
+      if player_validator.is_player_event(e) then
+        local evt_name = event_registry.get_event_name(event_id)
+        if evt_name then
+          logger.log_event(evt_name, e)
+        end
+      end
+    end)
+  end
+end
+
+function main.initialize()
+  main.register_event_handlers()
+end
+
+-- ============================================================================
+-- SCRIPT INITIALIZATION
+-- ============================================================================
 script.on_init(function()
   log('[enhanced-player-logger] armed – writing contextual player actions to factorio-current.log')
 end)
 
+-- Initialize the modular logger
+main.initialize()
+
+-- ============================================================================
+-- LEGACY MODULES (UNCHANGED)
+-- ============================================================================
 local handler = require("event_handler")
 handler.add_lib(require("freeplay"))
 handler.add_lib(require("silo-script"))
