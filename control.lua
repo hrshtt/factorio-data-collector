@@ -163,6 +163,12 @@ local context_extractors = {}
 
 function context_extractors.on_player_cursor_stack_changed(e, rec, player)
   local ctx = utils.get_player_context(player)
+  
+  -- Only log if there's actual cursor data
+  if not ctx.cursor_item then
+    return false -- Skip logging this event
+  end
+  
   rec.cursor_item = ctx.cursor_item
   rec.cursor_count = ctx.cursor_count
 end
