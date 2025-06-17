@@ -80,7 +80,6 @@ local event_registry = {}
 event_registry.tracked_events = {
   -- Core building/mining actions
   defines.events.on_built_entity,
-  defines.events.on_player_built_entity,
   defines.events.on_player_mined_entity,
   
   -- Crafting
@@ -135,7 +134,7 @@ event_registry.tracked_events = {
   defines.events.on_picked_up_item,
   
   -- Radar and scanning
-  defines.events.on_sector_scanned,
+  -- defines.events.on_sector_scanned,
   
   -- Train operations
   defines.events.on_train_changed_state,
@@ -145,7 +144,7 @@ event_registry.tracked_events = {
   defines.events.on_rocket_launched,
   
   -- World generation
-  defines.events.on_chunk_generated,
+  -- defines.events.on_chunk_generated,
 }
 
 function event_registry.get_event_name(event_id)
@@ -178,14 +177,6 @@ function context_extractors.on_player_pipette(e, rec, player)
 end
 
 function context_extractors.on_built_entity(e, rec, player)
-  rec.action = "build"
-  -- Item info is usually in created_entity for these events
-  if e.created_entity then
-    rec.ent = utils.get_entity_info(e.created_entity)
-  end
-end
-
-function context_extractors.on_player_built_entity(e, rec, player)
   rec.action = "build"
   -- Item info is usually in created_entity for these events
   if e.created_entity then
@@ -304,16 +295,16 @@ function context_extractors.on_picked_up_item(e, rec, player)
   end
 end
 
-function context_extractors.on_sector_scanned(e, rec, player)
-  rec.action = "radar_scan"
-  if e.radar then
-    rec.radar_ent = utils.get_entity_info(e.radar)
-  end
-  if e.chunk_position then
-    rec.chunk_x = e.chunk_position.x
-    rec.chunk_y = e.chunk_position.y
-  end
-end
+-- function context_extractors.on_sector_scanned(e, rec, player)
+--   rec.action = "radar_scan"
+--   if e.radar then
+--     rec.radar_ent = utils.get_entity_info(e.radar)
+--   end
+--   if e.chunk_position then
+--     rec.chunk_x = e.chunk_position.x
+--     rec.chunk_y = e.chunk_position.y
+--   end
+-- end
 
 function context_extractors.on_train_changed_state(e, rec, player)
   rec.action = "train_state_change"
@@ -340,19 +331,19 @@ function context_extractors.on_rocket_launched(e, rec, player)
   end
 end
 
-function context_extractors.on_chunk_generated(e, rec, player)
-  rec.action = "chunk_generated"
-  if e.area then
-    rec.chunk_left_top_x = e.area.left_top.x
-    rec.chunk_left_top_y = e.area.left_top.y
-    rec.chunk_right_bottom_x = e.area.right_bottom.x
-    rec.chunk_right_bottom_y = e.area.right_bottom.y
-  end
-  if e.position then
-    rec.chunk_pos_x = e.position.x
-    rec.chunk_pos_y = e.position.y
-  end
-end
+-- function context_extractors.on_chunk_generated(e, rec, player)
+--   rec.action = "chunk_generated"
+--   if e.area then
+--     rec.chunk_left_top_x = e.area.left_top.x
+--     rec.chunk_left_top_y = e.area.left_top.y
+--     rec.chunk_right_bottom_x = e.area.right_bottom.x
+--     rec.chunk_right_bottom_y = e.area.right_bottom.y
+--   end
+--   if e.position then
+--     rec.chunk_pos_x = e.position.x
+--     rec.chunk_pos_y = e.position.y
+--   end
+-- end
 
 function context_extractors.get_extractor(evt_name)
   return context_extractors[evt_name] or function() end -- Default no-op
@@ -435,7 +426,19 @@ local main = {}
 function main.register_event_handlers()
   for _, event_id in pairs(event_registry.tracked_events) do
     script.on_event(event_id, function(e)
-      if player_validator.is_player_event(e) then
+      -- Some events don't have player_index (rockets, trains, etc.)
+      local has_player = e.player_index ~= nil
+      
+      if has_player then
+        -- For player events, validate the player
+        if player_validator.is_player_event(e) then
+          local evt_name = event_registry.get_event_name(event_id)
+          if evt_name then
+            logger.log_event(evt_name, e)
+          end
+        end
+      else
+        -- For non-player events (rockets, trains, etc.), log directly
         local evt_name = event_registry.get_event_name(event_id)
         if evt_name then
           logger.log_event(evt_name, e)
