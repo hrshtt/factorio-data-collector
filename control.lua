@@ -284,14 +284,17 @@ end
 function context_extractors.on_player_mined_item(e, rec, player)
   rec.action = "pickup"
   if e.item_stack then
-    rec.itm, rec.cnt = utils.get_item_info(e.item_stack)
+    -- SimpleItemStack is just a table with name and count
+    rec.itm = e.item_stack.name
+    rec.cnt = e.item_stack.count
   end
 end
 
 function context_extractors.on_picked_up_item(e, rec, player)
   rec.action = "pickup"
   if e.item_stack then
-    rec.itm, rec.cnt = utils.get_item_info(e.item_stack)
+    rec.itm = e.item_stack.name
+    rec.cnt = e.item_stack.count
   end
 end
 
