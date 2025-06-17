@@ -125,6 +125,27 @@ event_registry.tracked_events = {
   defines.events.on_player_dropped_item,
   defines.events.on_player_fast_transferred,
   defines.events.on_player_rotated_entity,
+  
+  -- Movement and position
+  defines.events.on_player_changed_position,
+  
+  -- Mining and item interactions
+  defines.events.on_player_mined_tile,
+  defines.events.on_player_mined_item,
+  defines.events.on_picked_up_item,
+  
+  -- Radar and scanning
+  defines.events.on_sector_scanned,
+  
+  -- Train operations
+  defines.events.on_train_changed_state,
+  
+  -- Rocket operations
+  defines.events.on_rocket_launch_ordered,
+  defines.events.on_rocket_launched,
+  
+  -- World generation
+  defines.events.on_chunk_generated,
 }
 
 function event_registry.get_event_name(event_id)
@@ -215,6 +236,122 @@ end
 
 function context_extractors.on_player_driving_changed_state(e, rec, player)
   rec.action = e.entity and "enter_vehicle" or "exit_vehicle"
+end
+
+-- Missing extractors for existing events
+function context_extractors.on_player_fast_transferred(e, rec, player)
+  rec.action = "transfer"
+  if e.entity then
+    rec.ent = utils.get_entity_info(e.entity)
+  end
+end
+
+function context_extractors.on_player_dropped_item(e, rec, player)
+  rec.action = "drop"
+  if e.entity then
+    rec.ent = utils.get_entity_info(e.entity)
+  end
+end
+
+function context_extractors.on_player_rotated_entity(e, rec, player)
+  rec.action = "rotate"
+  if e.entity then
+    rec.ent = utils.get_entity_info(e.entity)
+  end
+end
+
+-- New context extractors for newly added events
+function context_extractors.on_player_changed_position(e, rec, player)
+  rec.action = "move"
+  -- Position is already added in logger.create_base_record if available in event
+  -- Add player context for additional info
+  local ctx = utils.get_player_context(player)
+  if ctx.cursor_item then
+    rec.cursor_item = ctx.cursor_item
+    rec.cursor_count = ctx.cursor_count
+  end
+  if ctx.selected then
+    rec.selected = ctx.selected
+  end
+end
+
+function context_extractors.on_player_mined_tile(e, rec, player)
+  rec.action = "mine_tile"
+  if e.tiles then
+    local tiles = {}
+    for _, tile in pairs(e.tiles) do
+      if tile and tile.name then
+        table.insert(tiles, tile.name)
+      end
+    end
+    if #tiles > 0 then
+      rec.tiles = table.concat(tiles, ",")
+    end
+  end
+end
+
+function context_extractors.on_player_mined_item(e, rec, player)
+  rec.action = "pickup"
+  if e.item_stack then
+    rec.itm, rec.cnt = utils.get_item_info(e.item_stack)
+  end
+end
+
+function context_extractors.on_picked_up_item(e, rec, player)
+  rec.action = "pickup"
+  if e.item_stack then
+    rec.itm, rec.cnt = utils.get_item_info(e.item_stack)
+  end
+end
+
+function context_extractors.on_sector_scanned(e, rec, player)
+  rec.action = "radar_scan"
+  if e.radar then
+    rec.radar_ent = utils.get_entity_info(e.radar)
+  end
+  if e.chunk_position then
+    rec.chunk_x = e.chunk_position.x
+    rec.chunk_y = e.chunk_position.y
+  end
+end
+
+function context_extractors.on_train_changed_state(e, rec, player)
+  rec.action = "train_state_change"
+  if e.train then
+    rec.old_state = e.old_state
+    rec.new_state = e.train.state
+    if e.train.front_stock then
+      rec.train_ent = utils.get_entity_info(e.train.front_stock)
+    end
+  end
+end
+
+function context_extractors.on_rocket_launch_ordered(e, rec, player)
+  rec.action = "rocket_ordered"
+  if e.rocket then
+    rec.rocket_ent = utils.get_entity_info(e.rocket)
+  end
+end
+
+function context_extractors.on_rocket_launched(e, rec, player)
+  rec.action = "rocket_launched"
+  if e.rocket then
+    rec.rocket_ent = utils.get_entity_info(e.rocket)
+  end
+end
+
+function context_extractors.on_chunk_generated(e, rec, player)
+  rec.action = "chunk_generated"
+  if e.area then
+    rec.chunk_left_top_x = e.area.left_top.x
+    rec.chunk_left_top_y = e.area.left_top.y
+    rec.chunk_right_bottom_x = e.area.right_bottom.x
+    rec.chunk_right_bottom_y = e.area.right_bottom.y
+  end
+  if e.position then
+    rec.chunk_pos_x = e.position.x
+    rec.chunk_pos_y = e.position.y
+  end
 end
 
 function context_extractors.get_extractor(evt_name)
