@@ -2,7 +2,12 @@
 -- UTILITY FUNCTIONS MODULE
 -- ============================================================================
 local OUT_DIR = "factorio_replays/"
+local LOG_PATH = OUT_DIR .. "replay-log.jsonl"
 local utils = {}
+
+-- Buffer configuration
+local FLUSH_EVERY     = 600        -- 10 s at 60 UPS
+local MAX_BUF_BYTES   = 1000000    -- ~1 MB safety cap
 
 function utils.get_item_info(stack)
   if not stack or not stack.valid_for_read then
@@ -545,7 +550,8 @@ end
 local logger = {}
 
 function logger.emit(record)
-  log(game.table_to_json(record))
+  -- append = true  ➜ don't clobber previous writes
+  game.write_file(LOG_PATH, game.table_to_json(record) .. "\n", true)
 end
 
 function logger.create_base_record(evt_name, e)
@@ -603,9 +609,31 @@ function logger.log_event(evt_name, e)
   -- Add player context if missing
   logger.add_player_context_if_missing(rec, player)
   
-  -- Clean up nil values and emit
+  -- Clean up nil values and buffer the event
   local clean_rec = utils.clean_record(rec)
-  logger.emit(clean_rec)
+  local line = game.table_to_json(clean_rec)
+  
+  -- Ensure global buffer is initialized
+  if not global.log_buf then
+    global.log_buf = {}
+    global.buf_bytes = 0
+  end
+  
+  table.insert(global.log_buf, line)
+  global.buf_bytes = global.buf_bytes + #line + 1      -- +1 for "\n"
+
+  if global.buf_bytes >= MAX_BUF_BYTES then  -- emergency flush
+    flush_buffer()
+  end
+end
+
+-- ============================================================================
+-- BUFFER MANAGEMENT
+-- ============================================================================
+local function flush_buffer()
+  if not global.log_buf or #global.log_buf == 0 then return end
+  game.write_file(LOG_PATH, table.concat(global.log_buf, "\n") .. "\n", true)
+  global.log_buf, global.buf_bytes = {}, 0
 end
 
 -- ============================================================================
@@ -646,7 +674,34 @@ end
 -- SCRIPT INITIALIZATION
 -- ============================================================================
 script.on_init(function()
-  log('[enhanced-player-logger] armed – writing contextual player actions to factorio-current.log')
+  -- Initialize global buffer
+  global.log_buf   = global.log_buf   or {}   -- survives save/load
+  global.buf_bytes = global.buf_bytes or 0
+  
+  -- Optional: rotate log at tick 0
+  if game.tick == 0 then
+    game.write_file(LOG_PATH, "", false)  -- clobber old file
+  end
+  
+  log('[enhanced-player-logger] armed – writing contextual player actions to ' .. LOG_PATH)
+end)
+
+script.on_load(function()
+  -- Initialize global buffer on load
+  global.log_buf   = global.log_buf   or {}
+  global.buf_bytes = global.buf_bytes or 0
+end)
+
+-- Periodic flush every FLUSH_EVERY ticks
+script.on_nth_tick(FLUSH_EVERY, flush_buffer)
+
+-- Final-tick detection (headless or local view)
+script.on_event(defines.events.on_tick, function()
+  -- factorio --run-replay quits right after this frame
+  if game.tick_paused and game.ticks_to_run == 0 then
+    flush_buffer()                                  -- last chance
+    script.on_event(defines.events.on_tick, nil)    -- disable self
+  end
 end)
 
 -- Initialize the modular logger
