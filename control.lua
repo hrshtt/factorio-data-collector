@@ -1,6 +1,7 @@
 -- ============================================================================
 -- UTILITY FUNCTIONS MODULE
 -- ============================================================================
+local OUT_DIR = "factorio_replays/"
 local utils = {}
 
 function utils.get_item_info(stack)
@@ -59,7 +60,7 @@ end
 -- ============================================================================
 local blueprint_utils = {}
 
-function blueprint_utils.extract_blueprint_data(bp_stack, tag)
+function blueprint_utils.extract_blueprint_data(bp_stack, tag, tick, player_idx)
   -- Safety checks
   if not (bp_stack and bp_stack.valid_for_read and bp_stack.is_blueprint_setup()) then
     return nil -- Nothing to extract
@@ -70,15 +71,33 @@ function blueprint_utils.extract_blueprint_data(bp_stack, tag)
     local data = {}
     
     -- Basic metadata
-    data.bp_phase = tag
-    data.bp_label = bp_stack.label or ""
+    data.tick = tick
+    data.player = player_idx
+    data.phase = tag
+    data.label = bp_stack.label or ""
     
     -- Blueprint string (safe for export/import)
     local export_success, bp_string = pcall(function()
       return bp_stack.export_stack()
     end)
     if export_success and bp_string then
-      data.bp_string = bp_string
+      -- Create digest for correlation
+      local digest_success, bp_digest = pcall(function()
+        return string.sub(game.encode_string(bp_string), 1, 12)
+      end)
+      if digest_success and bp_digest then
+        data.bp_digest = bp_digest
+        
+        -- Log blueprint string to separate file
+        local write_success = pcall(function()
+          local line = string.format("[%d] %s %s %s %s\n", 
+            tick, bp_digest, tag, data.label, bp_string)
+          game.write_file(OUT_DIR .. "blueprint-strings.txt", line, true)
+        end)
+        if not write_success then
+          log("[blueprint-logger] Error writing blueprint string to file")
+        end
+      end
     end
     
     -- Entity data
@@ -86,14 +105,14 @@ function blueprint_utils.extract_blueprint_data(bp_stack, tag)
       return bp_stack.get_blueprint_entities() or {}
     end)
     if entities_success and entities then
-      data.bp_entity_count = #entities
+      data.entity_count = #entities
       -- Store first few entities for quick inspection (limit to avoid huge logs)
       if #entities > 0 then
-        data.bp_sample_entities = {}
-        for i = 1, math.min(3, #entities) do
+        data.sample_entities = {}
+        for i = 1, math.min(5, #entities) do
           local ent = entities[i]
           if ent and ent.name then
-            table.insert(data.bp_sample_entities, {
+            table.insert(data.sample_entities, {
               name = ent.name,
               position = ent.position
             })
@@ -107,7 +126,7 @@ function blueprint_utils.extract_blueprint_data(bp_stack, tag)
       return bp_stack.get_blueprint_tiles and bp_stack.get_blueprint_tiles() or {}
     end)
     if tiles_success and tiles then
-      data.bp_tile_count = #tiles
+      data.tile_count = #tiles
     end
     
     return data
@@ -126,15 +145,18 @@ function blueprint_utils.get_blueprint_stack_safely(event, player)
   -- Try multiple sources for the blueprint stack based on event type
   local stack = nil
   
-  if event.stack then
+  if player and player.cursor_stack then
+    -- For configured blueprint (usually in cursor)
+    stack = player.cursor_stack
+  elseif event.stack then
     -- Direct stack from event (on_player_setup_blueprint in v1.1+)
     stack = event.stack
+  elseif player and player.opened_gui_type == defines.gui_type.item and player.opened then
+    -- Blueprint in opened GUI
+    stack = player.opened
   elseif player and player.blueprint_to_setup then
     -- Fallback for setup phase
     stack = player.blueprint_to_setup
-  elseif player and player.cursor_stack then
-    -- For configured blueprint (usually in cursor)
-    stack = player.cursor_stack
   end
   
   -- Validate the stack
@@ -460,15 +482,14 @@ function context_extractors.on_player_setup_blueprint(e, rec, player)
     rec.entity_count = #e.entities
   end
   
-  -- Extract and integrate blueprint data directly into the event record
+  -- Enhanced blueprint logging - extract and log full blueprint data
   local bp_stack = blueprint_utils.get_blueprint_stack_safely(e, player)
   if bp_stack then
-    local bp_data = blueprint_utils.extract_blueprint_data(bp_stack, "setup")
+    local bp_data = blueprint_utils.extract_blueprint_data(bp_stack, "setup", e.tick, e.player_index)
     if bp_data then
-      -- Merge blueprint data into the main event record
-      for key, value in pairs(bp_data) do
-        rec[key] = value
-      end
+      rec.bp_digest = bp_data.bp_digest
+      rec.bp_label = bp_data.label
+      rec.bp_entity_count = bp_data.entity_count
     end
   end
 end
@@ -476,15 +497,14 @@ end
 function context_extractors.on_player_configured_blueprint(e, rec, player)
   rec.action = "blueprint_confirmed"
   
-  -- Extract and integrate blueprint data directly into the event record
+  -- Enhanced blueprint logging - the blueprint is now in the player's cursor
   local bp_stack = blueprint_utils.get_blueprint_stack_safely(e, player)
   if bp_stack then
-    local bp_data = blueprint_utils.extract_blueprint_data(bp_stack, "confirm")
+    local bp_data = blueprint_utils.extract_blueprint_data(bp_stack, "confirm", e.tick, e.player_index)
     if bp_data then
-      -- Merge blueprint data into the main event record
-      for key, value in pairs(bp_data) do
-        rec[key] = value
-      end
+      rec.bp_digest = bp_data.bp_digest
+      rec.bp_label = bp_data.label
+      rec.bp_entity_count = bp_data.entity_count
     end
   end
 end
