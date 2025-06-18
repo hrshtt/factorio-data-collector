@@ -202,6 +202,7 @@ event_registry.tracked_events = {
   
   -- Crafting
   defines.events.on_player_crafted_item,
+  defines.events.on_pre_player_crafted_item,
   defines.events.on_player_cancelled_crafting,
   
   -- Important cursor/pipette actions
@@ -237,6 +238,7 @@ event_registry.tracked_events = {
   defines.events.on_console_chat,
   defines.events.on_player_joined_game,
   defines.events.on_player_left_game,
+  defines.events.on_pre_player_left_game,
   
   -- Important interactions
   defines.events.on_player_dropped_item,
@@ -304,7 +306,7 @@ function context_extractors.on_built_entity(e, rec, player)
   rec.action = "build"
   -- Item info is usually in created_entity for these events
   if e.created_entity then
-    rec.ent = utils.get_entity_info(e.created_entity)
+    rec.entity = utils.get_entity_info(e.created_entity)
   end
 end
 
@@ -328,6 +330,25 @@ end
 function context_extractors.on_player_crafted_item(e, rec, player)
   rec.action = "craft"
   rec.recipe = e.recipe and e.recipe.name
+end
+
+function context_extractors.on_pre_player_crafted_item(e, rec, player)
+  rec.action = "queue_craft"
+  rec.recipe = e.recipe and e.recipe.name
+  rec.count = e.queued_count
+  
+  -- Log items consumed from inventory
+  if e.items then
+    local consumed_items = {}
+    for name, count in pairs(e.items.get_contents()) do
+      if count > 0 then
+        table.insert(consumed_items, name .. ":" .. count)
+      end
+    end
+    if #consumed_items > 0 then
+      rec.consumed = table.concat(consumed_items, ",")
+    end
+  end
 end
 
 function context_extractors.on_gui_click(e, rec, player)
@@ -357,21 +378,21 @@ end
 function context_extractors.on_player_fast_transferred(e, rec, player)
   rec.action = "transfer"
   if e.entity then
-    rec.ent = utils.get_entity_info(e.entity)
+    rec.entity = utils.get_entity_info(e.entity)
   end
 end
 
 function context_extractors.on_player_dropped_item(e, rec, player)
   rec.action = "drop"
   if e.entity then
-    rec.ent = utils.get_entity_info(e.entity)
+    rec.entity = utils.get_entity_info(e.entity)
   end
 end
 
 function context_extractors.on_player_rotated_entity(e, rec, player)
   rec.action = "rotate"
   if e.entity then
-    rec.ent = utils.get_entity_info(e.entity)
+    rec.entity = utils.get_entity_info(e.entity)
   end
 end
 
@@ -409,16 +430,16 @@ function context_extractors.on_player_mined_item(e, rec, player)
   rec.action = "pickup"
   if e.item_stack then
     -- SimpleItemStack is just a table with name and count
-    rec.itm = e.item_stack.name
-    rec.cnt = e.item_stack.count
+    rec.item = e.item_stack.name
+    rec.count = e.item_stack.count
   end
 end
 
 function context_extractors.on_picked_up_item(e, rec, player)
   rec.action = "pickup"
   if e.item_stack then
-    rec.itm = e.item_stack.name
-    rec.cnt = e.item_stack.count
+    rec.item = e.item_stack.name
+    rec.count = e.item_stack.count
   end
 end
 
@@ -540,6 +561,11 @@ function context_extractors.on_player_deconstructed_area(e, rec, player)
   end
 end
 
+function context_extractors.on_pre_player_left_game(e, rec, player)
+  rec.action = "leaving_game"
+  rec.reason = e.reason -- disconnect reason
+end
+
 function context_extractors.get_extractor(evt_name)
   return context_extractors[evt_name] or function() end -- Default no-op
 end
@@ -550,8 +576,14 @@ end
 local logger = {}
 
 function logger.emit(record)
-  -- append = true  ➜ don't clobber previous writes
-  game.write_file(LOG_PATH, game.table_to_json(record) .. "\n", true)
+  -- Check if this is the first write of this session
+  local is_first_write = not global.file_initialized
+  if is_first_write then
+    global.file_initialized = true
+  end
+  
+  -- First write overwrites, subsequent writes append
+  game.write_file(LOG_PATH, game.table_to_json(record) .. "\n", not is_first_write)
 end
 
 function logger.create_base_record(evt_name, e)
@@ -569,14 +601,14 @@ function logger.create_base_record(evt_name, e)
   
   -- Add entity info if available
   if e.entity then
-    rec.ent = utils.get_entity_info(e.entity)
+    rec.entity = utils.get_entity_info(e.entity)
   end
   
   -- Add item/stack info if available
   if e.stack then
-    rec.itm, rec.cnt = utils.get_item_info(e.stack)
+    rec.item , rec.count = utils.get_item_info(e.stack)
   elseif e.item_stack then
-    rec.itm, rec.cnt = utils.get_item_info(e.item_stack)
+    rec.item , rec.count = utils.get_item_info(e.item_stack)
   end
   
   return rec
@@ -632,7 +664,15 @@ end
 -- ============================================================================
 local function flush_buffer()
   if not global.log_buf or #global.log_buf == 0 then return end
-  game.write_file(LOG_PATH, table.concat(global.log_buf, "\n") .. "\n", true)
+  
+  -- Check if this is the first write of this session
+  local is_first_write = not global.file_initialized
+  if is_first_write then
+    global.file_initialized = true
+  end
+  
+  -- First write overwrites, subsequent writes append
+  game.write_file(LOG_PATH, table.concat(global.log_buf, "\n") .. "\n", not is_first_write)
   global.log_buf, global.buf_bytes = {}, 0
 end
 
@@ -677,11 +717,7 @@ script.on_init(function()
   -- Initialize global buffer
   global.log_buf   = global.log_buf   or {}   -- survives save/load
   global.buf_bytes = global.buf_bytes or 0
-  
-  -- Optional: rotate log at tick 0
-  if game.tick == 0 then
-    game.write_file(LOG_PATH, "", false)  -- clobber old file
-  end
+  global.file_initialized = false  -- Track if we've written to file yet
   
   log('[enhanced-player-logger] armed – writing contextual player actions to ' .. LOG_PATH)
 end)
@@ -690,18 +726,24 @@ script.on_load(function()
   -- Initialize global buffer on load
   global.log_buf   = global.log_buf   or {}
   global.buf_bytes = global.buf_bytes or 0
+  global.file_initialized = global.file_initialized or false
 end)
 
 -- Periodic flush every FLUSH_EVERY ticks
 script.on_nth_tick(FLUSH_EVERY, flush_buffer)
 
 -- Final-tick detection (headless or local view)
-script.on_event(defines.events.on_tick, function()
-  -- factorio --run-replay quits right after this frame
-  if game.tick_paused and game.ticks_to_run == 0 then
-    flush_buffer()                                  -- last chance
-    script.on_event(defines.events.on_tick, nil)    -- disable self
+script.on_event(defines.events.on_tick, function(event)
+  -- First tick detection for replay start
+  if event.tick == 1 then
+    log('[REPLAY-START] First tick detected, replay begins')
   end
+  
+end)
+
+-- Replay end detection when player leaves
+script.on_event(defines.events.on_pre_player_left_game, function(event)
+  log('[REPLAY-END] Player leaving game, replay ends at tick ' .. event.tick)
 end)
 
 -- Initialize the modular logger
