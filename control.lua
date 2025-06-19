@@ -3,11 +3,10 @@
 -- ============================================================================
 local OUT_DIR = "factorio_replays/"
 local LOG_PATH = OUT_DIR .. "replay-log.jsonl"
-local utils = {}
-
--- Buffer configuration
 local FLUSH_EVERY     = 600        -- 10 s at 60 UPS
 local MAX_BUF_BYTES   = 1000000    -- ~1 MB safety cap
+
+local utils = {}
 
 function utils.get_item_info(stack)
   if not stack or not stack.valid_for_read then
@@ -79,29 +78,21 @@ function blueprint_utils.extract_blueprint_data(bp_stack, tag, tick, player_idx)
     data.tick = tick
     data.player = player_idx
     data.phase = tag
-    data.label = bp_stack.label or ""
     
     -- Blueprint string (safe for export/import)
     local export_success, bp_string = pcall(function()
       return bp_stack.export_stack()
     end)
     if export_success and bp_string then
-      -- Create digest for correlation
-      local digest_success, bp_digest = pcall(function()
-        return string.sub(game.encode_string(bp_string), 1, 12)
-      end)
-      if digest_success and bp_digest then
-        data.bp_digest = bp_digest
-        
-        -- Log blueprint string to separate file
-        local write_success = pcall(function()
-          local line = string.format("[%d] %s %s %s %s\n", 
-            tick, bp_digest, tag, data.label, bp_string)
-          game.write_file(OUT_DIR .. "blueprint-strings.txt", line, true)
-        end)
-        if not write_success then
-          log("[blueprint-logger] Error writing blueprint string to file")
-        end
+      -- Store the actual blueprint string in the data
+      data.bp_string = bp_string
+      
+      -- Create a more reliable digest using first 32 chars of blueprint string
+      -- This avoids hash collisions since blueprint strings are deterministic
+      if #bp_string >= 32 then
+        data.bp_digest = string.sub(bp_string, 1, 32)
+      else
+        data.bp_digest = bp_string -- Use full string if shorter than 32 chars
       end
     end
     
@@ -293,11 +284,6 @@ function context_extractors.on_player_cursor_stack_changed(e, rec, player)
   rec.cursor_count = ctx.cursor_count
 end
 
-function context_extractors.on_player_main_inventory_changed(e, rec, player)
-  -- Skip logging this - too noisy and usually consequence of other actions
-  return false -- Signal to skip this event
-end
-
 function context_extractors.on_player_pipette(e, rec, player)
   rec.pipette_item = e.item and e.item.name
 end
@@ -374,7 +360,6 @@ function context_extractors.on_player_driving_changed_state(e, rec, player)
   rec.action = e.entity and "enter_vehicle" or "exit_vehicle"
 end
 
--- Missing extractors for existing events
 function context_extractors.on_player_fast_transferred(e, rec, player)
   rec.action = "transfer"
   if e.entity then
@@ -396,7 +381,6 @@ function context_extractors.on_player_rotated_entity(e, rec, player)
   end
 end
 
--- New context extractors for newly added events
 function context_extractors.on_player_changed_position(e, rec, player)
   rec.action = "move"
   -- Position is already added in logger.create_base_record if available in event
@@ -443,17 +427,6 @@ function context_extractors.on_picked_up_item(e, rec, player)
   end
 end
 
--- function context_extractors.on_sector_scanned(e, rec, player)
---   rec.action = "radar_scan"
---   if e.radar then
---     rec.radar_ent = utils.get_entity_info(e.radar)
---   end
---   if e.chunk_position then
---     rec.chunk_x = e.chunk_position.x
---     rec.chunk_y = e.chunk_position.y
---   end
--- end
-
 function context_extractors.on_train_changed_state(e, rec, player)
   rec.action = "train_state_change"
   if e.train then
@@ -479,20 +452,6 @@ function context_extractors.on_rocket_launched(e, rec, player)
   end
 end
 
--- function context_extractors.on_chunk_generated(e, rec, player)
---   rec.action = "chunk_generated"
---   if e.area then
---     rec.chunk_left_top_x = e.area.left_top.x
---     rec.chunk_left_top_y = e.area.left_top.y
---     rec.chunk_right_bottom_x = e.area.right_bottom.x
---     rec.chunk_right_bottom_y = e.area.right_bottom.y
---   end
---   if e.position then
---     rec.chunk_pos_x = e.position.x
---     rec.chunk_pos_y = e.position.y
---   end
--- end
-
 function context_extractors.on_player_setup_blueprint(e, rec, player)
   rec.action = "blueprint_setup"
   if e.area then
@@ -514,7 +473,7 @@ function context_extractors.on_player_setup_blueprint(e, rec, player)
     local bp_data = blueprint_utils.extract_blueprint_data(bp_stack, "setup", e.tick, e.player_index)
     if bp_data then
       rec.bp_digest = bp_data.bp_digest
-      rec.bp_label = bp_data.label
+      rec.bp_string = bp_data.bp_string
       rec.bp_entity_count = bp_data.entity_count
     end
   end
@@ -529,7 +488,7 @@ function context_extractors.on_player_configured_blueprint(e, rec, player)
     local bp_data = blueprint_utils.extract_blueprint_data(bp_stack, "confirm", e.tick, e.player_index)
     if bp_data then
       rec.bp_digest = bp_data.bp_digest
-      rec.bp_label = bp_data.label
+      rec.bp_string = bp_data.bp_string
       rec.bp_entity_count = bp_data.entity_count
     end
   end
@@ -575,16 +534,16 @@ end
 -- ============================================================================
 local logger = {}
 
-function logger.emit(record)
-  -- Check if this is the first write of this session
-  local is_first_write = not global.file_initialized
-  if is_first_write then
-    global.file_initialized = true
-  end
+-- function logger.emit(record)
+--   -- Check if this is the first write of this session
+--   local is_first_write = not global.file_initialized
+--   if is_first_write then
+--     global.file_initialized = true
+--   end
   
-  -- First write overwrites, subsequent writes append
-  game.write_file(LOG_PATH, game.table_to_json(record) .. "\n", not is_first_write)
-end
+--   -- First write overwrites, subsequent writes append
+--   game.write_file(LOG_PATH, game.table_to_json(record) .. "\n", not is_first_write)
+-- end
 
 function logger.create_base_record(evt_name, e)
   local rec = {
@@ -683,21 +642,22 @@ local main = {}
 
 function main.register_event_handlers()
   for _, event_id in pairs(event_registry.tracked_events) do
-    script.on_event(event_id, function(e)
+    local eid = event_id  -- Create local copy to fix closure capture
+    script.on_event(eid, function(e)
       -- Some events don't have player_index (rockets, trains, etc.)
       local has_player = e.player_index ~= nil
       
       if has_player then
         -- For player events, validate the player
         if player_validator.is_player_event(e) then
-          local evt_name = event_registry.get_event_name(event_id)
+          local evt_name = event_registry.get_event_name(eid)
           if evt_name then
             logger.log_event(evt_name, e)
           end
         end
       else
         -- For non-player events (rockets, trains, etc.), log directly
-        local evt_name = event_registry.get_event_name(event_id)
+        local evt_name = event_registry.get_event_name(eid)
         if evt_name then
           logger.log_event(evt_name, e)
         end
@@ -742,8 +702,10 @@ script.on_event(defines.events.on_tick, function(event)
 end)
 
 -- Replay end detection when player leaves
+-- TODO: MAKE IT WORK !!!
 script.on_event(defines.events.on_pre_player_left_game, function(event)
   log('[REPLAY-END] Player leaving game, replay ends at tick ' .. event.tick)
+  flush_buffer()
 end)
 
 -- Initialize the modular logger
