@@ -1,7 +1,7 @@
 #!/bin/bash
 
-# Script to zip target directory and copy to Factorio saves
-# Usage: ./replay-logger.sh <target_directory>
+# Script to copy control.lua to target directory and zip it and copy to Factorio saves
+# Usage: ./setup-logging-on-save.sh <target_directory>
 
 set -e  # Exit on any error
 
@@ -39,7 +39,7 @@ fi
 echo "✓ Found replay.dat in target directory"
 
 # Check if control.lua exists in the project root
-CONTROL_LUA_SOURCE="./control.lua"
+CONTROL_LUA_SOURCE="./replay-lab/control.lua"
 if [ ! -f "$CONTROL_LUA_SOURCE" ]; then
     echo "Error: control.lua not found in current directory"
     exit 1
