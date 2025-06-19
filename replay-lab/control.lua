@@ -1,3 +1,12 @@
+--@control.lua
+--@description Enhanced Player Action Logger to jsonl
+--@author Harshit Sharma
+--@version 1.0.0
+--@date 2025-06-19
+--@license MIT
+--@category Other
+--@tags player, logger, replay, factorio
+
 -- ============================================================================
 -- UTILITY FUNCTIONS MODULE
 -- ============================================================================
@@ -362,8 +371,22 @@ end
 
 function context_extractors.on_player_fast_transferred(e, rec, player)
   rec.action = "transfer"
+  rec.direction = e.from_player and "player_to_entity" or "entity_to_player"
+  rec.is_split = e.is_split
+  
   if e.entity then
     rec.entity = utils.get_entity_info(e.entity)
+  end
+  
+  if e.item then
+    rec.item = utils.get_item_info(e.item)
+  end
+  
+  
+  -- Try to get item info from player's cursor stack (most recent transfer)
+  if player and player.cursor_stack and player.cursor_stack.valid_for_read then
+    rec.cursor_item = player.cursor_stack.name
+    rec.cursor_count = player.cursor_stack.count
   end
 end
 
