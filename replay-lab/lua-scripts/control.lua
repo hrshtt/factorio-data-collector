@@ -131,6 +131,11 @@ end)
 -- Periodic flush every FLUSH_EVERY ticks
 script.on_nth_tick(FLUSH_EVERY, function()
   shared_utils.flush_all_buffers()
+  
+  -- Clean up old inventory snapshots to prevent memory bloat
+  if production and production.cleanup_snapshots then
+    production.cleanup_snapshots()
+  end
 end)
 
 -- ============================================================================
