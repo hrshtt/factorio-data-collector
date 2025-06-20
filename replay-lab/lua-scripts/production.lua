@@ -12,106 +12,39 @@ local production = {}
 -- EVENT REGISTRATION
 -- ============================================================================
 function production.register_events()
-  -- Register production-related events
-  script.on_event(defines.events.on_built_entity, function(e)
-    if shared_utils.is_player_event(e) then
-      production.handle_event("on_built_entity", e)
-    end
-  end)
+  -- Define events that require player validation
+  local events = {
+    -- Player events
+    "on_built_entity",
+    "on_player_mined_entity",
+    "on_player_mined_item",
+    "on_player_mined_tile",
+    "on_player_built_tile",
+    "on_player_crafted_item",
+    "on_pre_player_crafted_item",
+    "on_player_cancelled_crafting",
+    "on_player_dropped_item",
+    "on_player_fast_transferred",
+    "on_player_rotated_entity",
+    "on_player_placed_equipment",
+    "on_player_removed_equipment",
+    "on_picked_up_item",
+    -- Global events
+    "on_research_started",
+    "on_research_finished", 
+    "on_rocket_launch_ordered",
+    "on_rocket_launched"
+  }
   
-  script.on_event(defines.events.on_player_mined_entity, function(e)
-    if shared_utils.is_player_event(e) then
-      production.handle_event("on_player_mined_entity", e)
-    end
-  end)
+  -- Register player events
+  for _, event_name in ipairs(events) do
+    script.on_event(defines.events[event_name], function(e)
+      if shared_utils.is_player_event(e) then
+        production.handle_event(event_name, e)
+      end
+    end)
+  end
   
-  script.on_event(defines.events.on_player_mined_item, function(e)
-    if shared_utils.is_player_event(e) then
-      production.handle_event("on_player_mined_item", e)
-    end
-  end)
-  
-  script.on_event(defines.events.on_player_mined_tile, function(e)
-    if shared_utils.is_player_event(e) then
-      production.handle_event("on_player_mined_tile", e)
-    end
-  end)
-  
-  script.on_event(defines.events.on_player_built_tile, function(e)
-    if shared_utils.is_player_event(e) then
-      production.handle_event("on_player_built_tile", e)
-    end
-  end)
-  
-  script.on_event(defines.events.on_player_crafted_item, function(e)
-    if shared_utils.is_player_event(e) then
-      production.handle_event("on_player_crafted_item", e)
-    end
-  end)
-  
-  script.on_event(defines.events.on_pre_player_crafted_item, function(e)
-    if shared_utils.is_player_event(e) then
-      production.handle_event("on_pre_player_crafted_item", e)
-    end
-  end)
-  
-  script.on_event(defines.events.on_player_cancelled_crafting, function(e)
-    if shared_utils.is_player_event(e) then
-      production.handle_event("on_player_cancelled_crafting", e)
-    end
-  end)
-  
-  script.on_event(defines.events.on_player_dropped_item, function(e)
-    if shared_utils.is_player_event(e) then
-      production.handle_event("on_player_dropped_item", e)
-    end
-  end)
-  
-  script.on_event(defines.events.on_player_fast_transferred, function(e)
-    if shared_utils.is_player_event(e) then
-      production.handle_event("on_player_fast_transferred", e)
-    end
-  end)
-  
-  script.on_event(defines.events.on_player_rotated_entity, function(e)
-    if shared_utils.is_player_event(e) then
-      production.handle_event("on_player_rotated_entity", e)
-    end
-  end)
-  
-  script.on_event(defines.events.on_player_placed_equipment, function(e)
-    if shared_utils.is_player_event(e) then
-      production.handle_event("on_player_placed_equipment", e)
-    end
-  end)
-  
-  script.on_event(defines.events.on_player_removed_equipment, function(e)
-    if shared_utils.is_player_event(e) then
-      production.handle_event("on_player_removed_equipment", e)
-    end
-  end)
-  
-  script.on_event(defines.events.on_research_started, function(e)
-    production.handle_event("on_research_started", e)
-  end)
-  
-  script.on_event(defines.events.on_research_finished, function(e)
-    production.handle_event("on_research_finished", e)
-  end)
-  
-  script.on_event(defines.events.on_rocket_launch_ordered, function(e)
-    production.handle_event("on_rocket_launch_ordered", e)
-  end)
-  
-  script.on_event(defines.events.on_rocket_launched, function(e)
-    production.handle_event("on_rocket_launched", e)
-  end)
-  
-  script.on_event(defines.events.on_picked_up_item, function(e)
-    if shared_utils.is_player_event(e) then
-      production.handle_event("on_picked_up_item", e)
-    end
-  end)
 end
 
 -- ============================================================================
@@ -146,12 +79,33 @@ end
 -- ============================================================================
 -- CONTEXT EXTRACTORS
 -- ============================================================================
-function production.on_built_entity(e, rec, player)
-  rec.action = "build"
-  -- Item info is usually in created_entity for these events
-  if e.created_entity then
-    rec.entity = shared_utils.get_entity_info(e.created_entity)
+
+-- Helper function for simple entity extraction
+function production.extract_entity_action(e, rec, action_name, entity_field)
+  rec.action = action_name
+  if e[entity_field or "entity"] then
+    rec.entity = shared_utils.get_entity_info(e[entity_field or "entity"])
   end
+end
+
+-- Helper function for simple item extraction
+function production.extract_item_action(e, rec, action_name, item_field)
+  rec.action = action_name
+  if e[item_field or "item_stack"] then
+    local item_data = e[item_field or "item_stack"]
+    rec.item = item_data.name
+    rec.count = item_data.count
+  end
+end
+
+-- Helper function for recipe extraction
+function production.extract_recipe_action(e, rec, action_name)
+  rec.action = action_name
+  rec.recipe = e.recipe and e.recipe.name
+end
+
+function production.on_built_entity(e, rec, player)
+  production.extract_entity_action(e, rec, "build", "created_entity")
 end
 
 function production.on_player_mined_entity(e, rec, player)
@@ -172,8 +126,7 @@ function production.on_player_mined_entity(e, rec, player)
 end
 
 function production.on_player_crafted_item(e, rec, player)
-  rec.action = "craft"
-  rec.recipe = e.recipe and e.recipe.name
+  production.extract_recipe_action(e, rec, "craft")
 end
 
 function production.on_pre_player_crafted_item(e, rec, player)
@@ -226,17 +179,11 @@ function production.on_player_fast_transferred(e, rec, player)
 end
 
 function production.on_player_dropped_item(e, rec, player)
-  rec.action = "drop"
-  if e.entity then
-    rec.entity = shared_utils.get_entity_info(e.entity)
-  end
+  production.extract_entity_action(e, rec, "drop")
 end
 
 function production.on_player_rotated_entity(e, rec, player)
-  rec.action = "rotate"
-  if e.entity then
-    rec.entity = shared_utils.get_entity_info(e.entity)
-  end
+  production.extract_entity_action(e, rec, "rotate")
 end
 
 function production.on_player_mined_tile(e, rec, player)
@@ -295,21 +242,13 @@ function production.on_player_built_tile(e, rec, player)
   end
 end
 
+-- Both pickup functions are identical, so we'll use the same implementation
 function production.on_player_mined_item(e, rec, player)
-  rec.action = "pickup"
-  if e.item_stack then
-    -- SimpleItemStack is just a table with name and count
-    rec.item = e.item_stack.name
-    rec.count = e.item_stack.count
-  end
+  production.extract_item_action(e, rec, "pickup")
 end
 
 function production.on_picked_up_item(e, rec, player)
-  rec.action = "pickup"
-  if e.item_stack then
-    rec.item = e.item_stack.name
-    rec.count = e.item_stack.count
-  end
+  production.extract_item_action(e, rec, "pickup")
 end
 
 function production.on_train_changed_state(e, rec, player)
@@ -348,17 +287,11 @@ function production.on_player_cancelled_crafting(e, rec, player)
 end
 
 function production.on_player_placed_equipment(e, rec, player)
-  rec.action = "place_equipment"
-  if e.equipment then
-    rec.equipment = shared_utils.get_entity_info(e.equipment)
-  end
+  production.extract_entity_action(e, rec, "place_equipment", "equipment")
 end
 
 function production.on_player_removed_equipment(e, rec, player)
-  rec.action = "remove_equipment"
-  if e.equipment then
-    rec.equipment = shared_utils.get_entity_info(e.equipment)
-  end
+  production.extract_entity_action(e, rec, "remove_equipment", "equipment")
 end
 
 -- ============================================================================
