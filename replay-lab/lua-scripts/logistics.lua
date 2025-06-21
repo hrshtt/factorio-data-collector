@@ -1,26 +1,26 @@
---@production.lua
---@description Production category logging module with state-diff layer
+--@logistics.lua
+--@description Logistics category logging module with state-diff layer - tracks item flow and personal crafting
 --@author Harshit Sharma
 --@version 2.0.0
 --@date 2025-01-27
 --@license MIT
 
 local shared_utils = require("shared-utils")
-local production = {}
+local logistics = {}
 
 -- ============================================================================
 -- INVENTORY SNAPSHOT SYSTEM
 -- ============================================================================
 
 -- Global inventory snapshots: global.inventory_snapshots[unit_number] = {inv_id = {name=count}}
-function production.initialize_snapshots()
+function logistics.initialize_snapshots()
   if not global.inventory_snapshots then
     global.inventory_snapshots = {}
   end
 end
 
 -- Get inventory IDs for an entity (handles different entity types)
-function production.get_entity_inventory_ids(entity)
+function logistics.get_entity_inventory_ids(entity)
   if not entity or not entity.valid then
     return {}
   end
@@ -51,7 +51,7 @@ function production.get_entity_inventory_ids(entity)
 end
 
 -- Take snapshot of specified inventories for a controller (player/entity)
-function production.snapshot_inventory(controller, inventory_ids)
+function logistics.snapshot_inventory(controller, inventory_ids)
   if not controller or not controller.valid then
     return {}
   end
@@ -67,7 +67,7 @@ function production.snapshot_inventory(controller, inventory_ids)
 end
 
 -- Clean up old snapshots to prevent memory bloat
-function production.cleanup_snapshots()
+function logistics.cleanup_snapshots()
   if not global.inventory_snapshots then
     return
   end
@@ -83,7 +83,7 @@ function production.cleanup_snapshots()
 end
 
 -- Update snapshot with timestamp
-function production.update_snapshot(unit_number, snapshot)
+function logistics.update_snapshot(unit_number, snapshot)
   if not global.inventory_snapshots then
     global.inventory_snapshots = {}
   end
@@ -93,7 +93,7 @@ function production.update_snapshot(unit_number, snapshot)
 end
 
 -- Diff two inventory snapshots to get delta
-function production.diff_inventory(old_snap, new_snap)
+function logistics.diff_inventory(old_snap, new_snap)
   local delta = {}
   
   -- Check for removed/decreased items
@@ -128,7 +128,7 @@ function production.diff_inventory(old_snap, new_snap)
 end
 
 -- Convert delta to JSON object instead of comma-separated string
-function production.delta_to_string(delta)
+function logistics.delta_to_string(delta)
   if not delta or not next(delta) then
     return nil
   end
@@ -142,7 +142,7 @@ end
 -- ============================================================================
 
 -- Create a record with stable schema (all fields present, nil for missing data)
-function production.create_stable_record(event_name, event_data)
+function logistics.create_stable_record(event_name, event_data)
   local rec = {
     -- Meta fields (always present)
     t = event_data.tick,
@@ -199,30 +199,30 @@ end
 -- EVENT REGISTRATION
 -- ============================================================================
 
-function production.register_events()
-  production.initialize_snapshots()
+function logistics.register_events()
+  logistics.initialize_snapshots()
   
   -- Define event handlers after all functions are defined
   local EVENT_HANDLERS = {
-    -- Production events (crafting, mining, item movement)
-    on_player_mined_entity = production.handle_mined_entity,
-    on_player_mined_item = production.handle_mined_item,
-    on_player_mined_tile = production.handle_mined_tile,
-    on_player_crafted_item = production.handle_crafted_item,
-    on_pre_player_crafted_item = production.handle_pre_crafted_item,
-    on_player_cancelled_crafting = production.handle_cancelled_crafting,
-    on_player_dropped_item = production.handle_dropped_item,
-    on_player_fast_transferred = production.handle_fast_transferred,
-    on_picked_up_item = production.handle_picked_up_item,
+    -- Logistics events (crafting, mining, item movement)
+    on_player_mined_entity = logistics.handle_mined_entity,
+    on_player_mined_item = logistics.handle_mined_item,
+    on_player_mined_tile = logistics.handle_mined_tile,
+    on_player_crafted_item = logistics.handle_crafted_item,
+    on_pre_player_crafted_item = logistics.handle_pre_crafted_item,
+    on_player_cancelled_crafting = logistics.handle_cancelled_crafting,
+    on_player_dropped_item = logistics.handle_dropped_item,
+    on_player_fast_transferred = logistics.handle_fast_transferred,
+    on_picked_up_item = logistics.handle_picked_up_item,
     
     -- Global events
-    on_research_started = production.handle_research_started,
-    on_research_finished = production.handle_research_finished,
-    on_rocket_launch_ordered = production.handle_rocket_ordered,
-    on_rocket_launched = production.handle_rocket_launched,
+    on_research_started = logistics.handle_research_started,
+    on_research_finished = logistics.handle_research_finished,
+    on_rocket_launch_ordered = logistics.handle_rocket_ordered,
+    on_rocket_launched = logistics.handle_rocket_launched,
     
     -- Inventory change events (for snapshot management)
-    on_player_main_inventory_changed = production.handle_inventory_changed
+    on_player_main_inventory_changed = logistics.handle_inventory_changed
   }
   
   -- Register all events from the registry
@@ -240,11 +240,11 @@ end
 -- ============================================================================
 
 -- Generic handler for inventory-based events
-function production.handle_inventory_event(event_name, event_data, action_name, extract_context)
+function logistics.handle_inventory_event(event_name, event_data, action_name, extract_context)
   local player = event_data.player_index and game.players[event_data.player_index]
   
   -- Create stable record
-  local rec = production.create_stable_record(event_name, event_data)
+  local rec = logistics.create_stable_record(event_name, event_data)
   rec.act = action_name
   
   -- Extract additional context if provided
@@ -257,12 +257,12 @@ function production.handle_inventory_event(event_name, event_data, action_name, 
   
   -- Clean and buffer
   local clean_rec = shared_utils.clean_record(rec)
-  shared_utils.buffer_event("production", game.table_to_json(clean_rec))
+  shared_utils.buffer_event("logistics", game.table_to_json(clean_rec))
 end
 
 -- Simple entity action handler
-function production.handle_entity_action(event_name, event_data, action_name, entity_field)
-  production.handle_inventory_event(event_name, event_data, action_name, function(e, rec, player)
+function logistics.handle_entity_action(event_name, event_data, action_name, entity_field)
+  logistics.handle_inventory_event(event_name, event_data, action_name, function(e, rec, player)
     if e[entity_field or "entity"] then
       rec.ent = shared_utils.get_entity_info(e[entity_field or "entity"])
     end
@@ -270,8 +270,8 @@ function production.handle_entity_action(event_name, event_data, action_name, en
 end
 
 -- Simple item action handler
-function production.handle_item_action(event_name, event_data, action_name, item_field)
-  production.handle_inventory_event(event_name, event_data, action_name, function(e, rec, player)
+function logistics.handle_item_action(event_name, event_data, action_name, item_field)
+  logistics.handle_inventory_event(event_name, event_data, action_name, function(e, rec, player)
     local item_data = e[item_field or "item_stack"]
     if item_data then
       rec.item = item_data.name
@@ -284,8 +284,8 @@ end
 -- SPECIFIC EVENT HANDLERS
 -- ============================================================================
 
-function production.handle_mined_entity(e)
-  production.handle_inventory_event("on_player_mined_entity", e, "mine", function(e, rec, player)
+function logistics.handle_mined_entity(e)
+  logistics.handle_inventory_event("on_player_mined_entity", e, "mine", function(e, rec, player)
     if e.buffer then
       local items = {}
       for i = 1, #e.buffer do
@@ -301,14 +301,14 @@ function production.handle_mined_entity(e)
   end)
 end
 
-function production.handle_crafted_item(e)
-  production.handle_inventory_event("on_player_crafted_item", e, "craft", function(e, rec, player)
+function logistics.handle_crafted_item(e)
+  logistics.handle_inventory_event("on_player_crafted_item", e, "craft", function(e, rec, player)
     rec.recipe = e.recipe and e.recipe.name
   end)
 end
 
-function production.handle_pre_crafted_item(e)
-  production.handle_inventory_event("on_pre_player_crafted_item", e, "queue_craft", function(e, rec, player)
+function logistics.handle_pre_crafted_item(e)
+  logistics.handle_inventory_event("on_pre_player_crafted_item", e, "queue_craft", function(e, rec, player)
     rec.recipe = e.recipe and e.recipe.name
     rec.cnt = e.queued_count
     
@@ -326,20 +326,20 @@ function production.handle_pre_crafted_item(e)
   end)
 end
 
-function production.handle_research_started(e)
-  production.handle_inventory_event("on_research_started", e, "research_start", function(e, rec, player)
+function logistics.handle_research_started(e)
+  logistics.handle_inventory_event("on_research_started", e, "research_start", function(e, rec, player)
     rec.tech = e.research and e.research.name
   end)
 end
 
-function production.handle_research_finished(e)
-  production.handle_inventory_event("on_research_finished", e, "research_done", function(e, rec, player)
+function logistics.handle_research_finished(e)
+  logistics.handle_inventory_event("on_research_finished", e, "research_done", function(e, rec, player)
     rec.tech = e.research and e.research.name
   end)
 end
 
 -- State-diff based fast transfer handler
-function production.handle_fast_transferred(e)
+function logistics.handle_fast_transferred(e)
   local player = game.players[e.player_index]
   local entity = e.entity
   
@@ -348,16 +348,16 @@ function production.handle_fast_transferred(e)
   local pre_entity_snap = entity and global.inventory_snapshots[entity.unit_number] or {}
   
   -- Take post-transfer snapshots with proper inventory detection
-  local post_player_snap = production.snapshot_inventory(player, {defines.inventory.character_main})
+  local post_player_snap = logistics.snapshot_inventory(player, {defines.inventory.character_main})
   local post_entity_snap = {}
   
   if entity and entity.valid then
-    local entity_inv_ids = production.get_entity_inventory_ids(entity)
-    post_entity_snap = production.snapshot_inventory(entity, entity_inv_ids)
+    local entity_inv_ids = logistics.get_entity_inventory_ids(entity)
+    post_entity_snap = logistics.snapshot_inventory(entity, entity_inv_ids)
   end
   
   -- Create record
-  local rec = production.create_stable_record("on_player_fast_transferred", e)
+  local rec = logistics.create_stable_record("on_player_fast_transferred", e)
   rec.act = "transfer"
   rec.direction = e.from_player and "player_to_entity" or "entity_to_player"
   rec.is_split = e.is_split
@@ -367,42 +367,42 @@ function production.handle_fast_transferred(e)
   end
   
   -- Calculate and store deltas
-  local player_delta = production.diff_inventory(pre_player_snap, post_player_snap)
-  local entity_delta = production.diff_inventory(pre_entity_snap, post_entity_snap)
+  local player_delta = logistics.diff_inventory(pre_player_snap, post_player_snap)
+  local entity_delta = logistics.diff_inventory(pre_entity_snap, post_entity_snap)
   
-  rec.delta_player = production.delta_to_string(player_delta)
-  rec.delta_entity = production.delta_to_string(entity_delta)
+  rec.delta_player = logistics.delta_to_string(player_delta)
+  rec.delta_entity = logistics.delta_to_string(entity_delta)
   
   -- Add player context
   shared_utils.add_player_context_if_missing(rec, player)
   
   -- Clean and buffer
   local clean_rec = shared_utils.clean_record(rec)
-  shared_utils.buffer_event("production", game.table_to_json(clean_rec))
+  shared_utils.buffer_event("logistics", game.table_to_json(clean_rec))
   
   -- Update snapshots with timestamps
-  production.update_snapshot(player.index, post_player_snap)
+  logistics.update_snapshot(player.index, post_player_snap)
   if entity and entity.unit_number then
-    production.update_snapshot(entity.unit_number, post_entity_snap)
+    logistics.update_snapshot(entity.unit_number, post_entity_snap)
   end
 end
 
 -- Inventory change handler for snapshot management
-function production.handle_inventory_changed(e)
+function logistics.handle_inventory_changed(e)
   local player = game.players[e.player_index]
   if player and player.valid then
     -- Update player snapshot when inventory changes
-    local new_snap = production.snapshot_inventory(player, {defines.inventory.character_main})
-    production.update_snapshot(player.index, new_snap)
+    local new_snap = logistics.snapshot_inventory(player, {defines.inventory.character_main})
+    logistics.update_snapshot(player.index, new_snap)
   end
 end
 
-function production.handle_dropped_item(e)
-  production.handle_entity_action("on_player_dropped_item", e, "drop")
+function logistics.handle_dropped_item(e)
+  logistics.handle_entity_action("on_player_dropped_item", e, "drop")
 end
 
-function production.handle_mined_tile(e)
-  production.handle_inventory_event("on_player_mined_tile", e, "mine_tile", function(e, rec, player)
+function logistics.handle_mined_tile(e)
+  logistics.handle_inventory_event("on_player_mined_tile", e, "mine_tile", function(e, rec, player)
     if e.tiles then
       local tiles = {}
       for _, tile in pairs(e.tiles) do
@@ -417,32 +417,32 @@ function production.handle_mined_tile(e)
   end)
 end
 
-function production.handle_mined_item(e)
-  production.handle_item_action("on_player_mined_item", e, "pickup")
+function logistics.handle_mined_item(e)
+  logistics.handle_item_action("on_player_mined_item", e, "pickup")
 end
 
-function production.handle_picked_up_item(e)
-  production.handle_item_action("on_picked_up_item", e, "pickup")
+function logistics.handle_picked_up_item(e)
+  logistics.handle_item_action("on_picked_up_item", e, "pickup")
 end
 
-function production.handle_rocket_ordered(e)
-  production.handle_inventory_event("on_rocket_launch_ordered", e, "rocket_ordered", function(e, rec, player)
+function logistics.handle_rocket_ordered(e)
+  logistics.handle_inventory_event("on_rocket_launch_ordered", e, "rocket_ordered", function(e, rec, player)
     if e.rocket then
       rec.rocket_ent = shared_utils.get_entity_info(e.rocket)
     end
   end)
 end
 
-function production.handle_rocket_launched(e)
-  production.handle_inventory_event("on_rocket_launched", e, "rocket_launched", function(e, rec, player)
+function logistics.handle_rocket_launched(e)
+  logistics.handle_inventory_event("on_rocket_launched", e, "rocket_launched", function(e, rec, player)
     if e.rocket then
       rec.rocket_ent = shared_utils.get_entity_info(e.rocket)
     end
   end)
 end
 
-function production.handle_cancelled_crafting(e)
-  production.handle_inventory_event("on_player_cancelled_crafting", e, "cancel_craft", function(e, rec, player)
+function logistics.handle_cancelled_crafting(e)
+  logistics.handle_inventory_event("on_player_cancelled_crafting", e, "cancel_craft", function(e, rec, player)
     if e.recipe then
       rec.recipe = e.recipe.name
     end
@@ -452,4 +452,4 @@ function production.handle_cancelled_crafting(e)
   end)
 end
 
-return production 
+return logistics 

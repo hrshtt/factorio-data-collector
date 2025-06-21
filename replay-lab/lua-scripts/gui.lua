@@ -31,11 +31,11 @@ function gui.register_events()
     end
   end)
   
-  script.on_event(defines.events.on_player_cursor_stack_changed, function(e)
-    if shared_utils.is_player_event(e) then
-      gui.handle_event("on_player_cursor_stack_changed", e)
-    end
-  end)
+  -- script.on_event(defines.events.on_player_cursor_stack_changed, function(e)
+  --   if shared_utils.is_player_event(e) then
+  --     gui.handle_event("on_player_cursor_stack_changed", e)
+  --   end
+  -- end)
   
   script.on_event(defines.events.on_player_pipette, function(e)
     if shared_utils.is_player_event(e) then
@@ -76,18 +76,18 @@ end
 -- ============================================================================
 -- CONTEXT EXTRACTORS
 -- ============================================================================
-function gui.on_player_cursor_stack_changed(e, rec, player)
-  local ctx = shared_utils.get_player_context(player)
+-- function gui.on_player_cursor_stack_changed(e, rec, player)
+--   local ctx = shared_utils.get_player_context(player)
   
-  -- Only log if there's actual cursor data
-  if not ctx.cursor_item then
-    return false -- Skip logging this event
-  end
+--   -- Only log if there's actual cursor data
+--   if not ctx.cursor_item then
+--     return false -- Skip logging this event
+--   end
   
-  rec.gui_type = "cursor"
-  rec.cursor_item = ctx.cursor_item
-  rec.cursor_count = ctx.cursor_count
-end
+--   rec.gui_type = "cursor"
+--   rec.cursor_item = ctx.cursor_item
+--   rec.cursor_count = ctx.cursor_count
+-- end
 
 function gui.on_player_pipette(e, rec, player)
   rec.gui_type = "pipette"

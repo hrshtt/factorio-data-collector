@@ -12,7 +12,7 @@
 -- ============================================================================
 local shared_utils = require("shared-utils")
 local movement = require("movement")
-local production = require("production")
+local logistics = require("logistics")
 local gui = require("gui")
 local construction = require("construction")
 local tick_overlay = require("tick_overlay")
@@ -100,7 +100,7 @@ function main.initialize()
   -- Register events for each category module
   core_meta.register_events()
   movement.register_events()
-  production.register_events()
+  logistics.register_events()
   gui.register_events()
   construction.register_events()
   tick_overlay.register_events()
@@ -113,12 +113,12 @@ script.on_init(function()
   -- Initialize category buffers
   shared_utils.initialize_category_buffer("core-meta")
   shared_utils.initialize_category_buffer("movement")
-  shared_utils.initialize_category_buffer("production")
+  shared_utils.initialize_category_buffer("logistics")
   shared_utils.initialize_category_buffer("gui")
   shared_utils.initialize_category_buffer("construction")
   
   log('[enhanced-player-logger] Category-based logging armed')
-  log('[enhanced-player-logger] Writing to: core-meta.jsonl, movement.jsonl, production.jsonl, gui.jsonl, construction.jsonl')
+  log('[enhanced-player-logger] Writing to: core-meta.jsonl, movement.jsonl, logistics.jsonl, gui.jsonl, construction.jsonl')
   log('[tick-overlay] Tick overlay enabled for replays and multiplayer')
 end)
 
@@ -126,7 +126,7 @@ script.on_load(function()
   -- Initialize category buffers on load
   shared_utils.initialize_category_buffer("core-meta")
   shared_utils.initialize_category_buffer("movement")
-  shared_utils.initialize_category_buffer("production")
+  shared_utils.initialize_category_buffer("logistics")
   shared_utils.initialize_category_buffer("gui")
   shared_utils.initialize_category_buffer("construction")
 end)
@@ -136,8 +136,8 @@ script.on_nth_tick(FLUSH_EVERY, function()
   shared_utils.flush_all_buffers()
   
   -- Clean up old inventory snapshots to prevent memory bloat
-  if production and production.cleanup_snapshots then
-    production.cleanup_snapshots()
+  if logistics and logistics.cleanup_snapshots then
+    logistics.cleanup_snapshots()
   end
 end)
 
