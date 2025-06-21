@@ -41,6 +41,7 @@ function production.get_entity_inventory_ids(entity)
   elseif entity.type == "rocket-silo" then
     table.insert(inventory_ids, defines.inventory.rocket_silo_rocket)
     table.insert(inventory_ids, defines.inventory.rocket_silo_result)
+    table.insert(inventory_ids, defines.inventory.rocket_silo_input)
   else
     -- Default fallback for unknown entity types
     table.insert(inventory_ids, defines.inventory.chest)
@@ -126,17 +127,14 @@ function production.diff_inventory(old_snap, new_snap)
   return delta
 end
 
--- Convert delta to comma-separated string for JSONL
+-- Convert delta to JSON object instead of comma-separated string
 function production.delta_to_string(delta)
   if not delta or not next(delta) then
     return nil
   end
   
-  local parts = {}
-  for item_name, count in pairs(delta) do
-    table.insert(parts, item_name .. ":" .. count)
-  end
-  return table.concat(parts, ",")
+  -- Return as JSON object instead of string concatenation
+  return game.table_to_json(delta)
 end
 
 -- ============================================================================
@@ -302,11 +300,11 @@ function production.handle_mined_entity(e)
       for i = 1, #e.buffer do
         local stack = e.buffer[i]
         if stack and stack.valid_for_read then
-          table.insert(items, stack.name .. ":" .. stack.count)
+          items[stack.name] = stack.count
         end
       end
-      if #items > 0 then
-        rec.gained = table.concat(items, ",")
+      if next(items) then
+        rec.gained = game.table_to_json(items)
       end
     end
   end)
@@ -327,11 +325,11 @@ function production.handle_pre_crafted_item(e)
       local consumed_items = {}
       for name, count in pairs(e.items.get_contents()) do
         if count > 0 then
-          table.insert(consumed_items, name .. ":" .. count)
+          consumed_items[name] = count
         end
       end
-      if #consumed_items > 0 then
-        rec.consumed = table.concat(consumed_items, ",")
+      if next(consumed_items) then
+        rec.consumed = game.table_to_json(consumed_items)
       end
     end
   end)
@@ -426,7 +424,7 @@ function production.handle_mined_tile(e)
         end
       end
       if #tiles > 0 then
-        rec.tiles = table.concat(tiles, ",")
+        rec.tiles = game.table_to_json(tiles)
       end
     end
   end)
@@ -457,11 +455,11 @@ function production.handle_built_tile(e)
       for i = 1, math.min(3, #e.tiles) do
         local tile_data = e.tiles[i]
         if tile_data and tile_data.position then
-          table.insert(positions, string.format("%.1f,%.1f", tile_data.position.x, tile_data.position.y))
+          table.insert(positions, {x = tile_data.position.x, y = tile_data.position.y})
         end
       end
       if #positions > 0 then
-        rec.tile_positions = table.concat(positions, ";")
+        rec.tile_positions = game.table_to_json(positions)
       end
     end
   end)

@@ -15,6 +15,7 @@ local movement = require("movement")
 local production = require("production")
 local gui = require("gui")
 local blueprint_planner = require("blueprint_planner")
+local tick_overlay = require("tick_overlay")
 
 -- ============================================================================
 -- CONFIGURATION
@@ -102,6 +103,7 @@ function main.initialize()
   production.register_events()
   gui.register_events()
   blueprint_planner.register_events()
+  tick_overlay.register_events()
 end
 
 -- ============================================================================
@@ -117,6 +119,7 @@ script.on_init(function()
   
   log('[enhanced-player-logger] Category-based logging armed')
   log('[enhanced-player-logger] Writing to: core-meta.jsonl, movement.jsonl, production.jsonl, gui.jsonl, blueprint_planner.jsonl')
+  log('[tick-overlay] Tick overlay enabled for replays and multiplayer')
 end)
 
 script.on_load(function()
