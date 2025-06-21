@@ -204,20 +204,15 @@ function production.register_events()
   
   -- Define event handlers after all functions are defined
   local EVENT_HANDLERS = {
-    -- Player events
-    on_built_entity = production.handle_built_entity,
+    -- Production events (crafting, mining, item movement)
     on_player_mined_entity = production.handle_mined_entity,
     on_player_mined_item = production.handle_mined_item,
     on_player_mined_tile = production.handle_mined_tile,
-    on_player_built_tile = production.handle_built_tile,
     on_player_crafted_item = production.handle_crafted_item,
     on_pre_player_crafted_item = production.handle_pre_crafted_item,
     on_player_cancelled_crafting = production.handle_cancelled_crafting,
     on_player_dropped_item = production.handle_dropped_item,
     on_player_fast_transferred = production.handle_fast_transferred,
-    on_player_rotated_entity = production.handle_rotated_entity,
-    on_player_placed_equipment = production.handle_placed_equipment,
-    on_player_removed_equipment = production.handle_removed_equipment,
     on_picked_up_item = production.handle_picked_up_item,
     
     -- Global events
@@ -288,10 +283,6 @@ end
 -- ============================================================================
 -- SPECIFIC EVENT HANDLERS
 -- ============================================================================
-
-function production.handle_built_entity(e)
-  production.handle_entity_action("on_built_entity", e, "build", "created_entity")
-end
 
 function production.handle_mined_entity(e)
   production.handle_inventory_event("on_player_mined_entity", e, "mine", function(e, rec, player)
@@ -410,10 +401,6 @@ function production.handle_dropped_item(e)
   production.handle_entity_action("on_player_dropped_item", e, "drop")
 end
 
-function production.handle_rotated_entity(e)
-  production.handle_entity_action("on_player_rotated_entity", e, "rotate")
-end
-
 function production.handle_mined_tile(e)
   production.handle_inventory_event("on_player_mined_tile", e, "mine_tile", function(e, rec, player)
     if e.tiles then
@@ -425,41 +412,6 @@ function production.handle_mined_tile(e)
       end
       if #tiles > 0 then
         rec.tiles = game.table_to_json(tiles)
-      end
-    end
-  end)
-end
-
-function production.handle_built_tile(e)
-  production.handle_inventory_event("on_player_built_tile", e, "build_tile", function(e, rec, player)
-    if e.tile then
-      rec.tile = e.tile.name
-    end
-    
-    if e.item then
-      rec.item = e.item.name
-    end
-    
-    if e.stack and e.stack.valid_for_read and e.stack.count > 0 then
-      rec.stack_item = e.stack.name
-      rec.stack_count = e.stack.count
-    end
-    
-    if e.surface_index then
-      rec.surface = e.surface_index
-    end
-    
-    if e.tiles and #e.tiles > 0 then
-      rec.tile_count = #e.tiles
-      local positions = {}
-      for i = 1, math.min(3, #e.tiles) do
-        local tile_data = e.tiles[i]
-        if tile_data and tile_data.position then
-          table.insert(positions, {x = tile_data.position.x, y = tile_data.position.y})
-        end
-      end
-      if #positions > 0 then
-        rec.tile_positions = game.table_to_json(positions)
       end
     end
   end)
@@ -498,14 +450,6 @@ function production.handle_cancelled_crafting(e)
       rec.cancel_count = e.cancel_count
     end
   end)
-end
-
-function production.handle_placed_equipment(e)
-  production.handle_entity_action("on_player_placed_equipment", e, "place_equipment", "equipment")
-end
-
-function production.handle_removed_equipment(e)
-  production.handle_entity_action("on_player_removed_equipment", e, "remove_equipment", "equipment")
 end
 
 return production 

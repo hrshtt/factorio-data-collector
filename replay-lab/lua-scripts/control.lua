@@ -14,7 +14,7 @@ local shared_utils = require("shared-utils")
 local movement = require("movement")
 local production = require("production")
 local gui = require("gui")
-local blueprint_planner = require("blueprint_planner")
+local construction = require("construction")
 local tick_overlay = require("tick_overlay")
 
 -- ============================================================================
@@ -102,7 +102,7 @@ function main.initialize()
   movement.register_events()
   production.register_events()
   gui.register_events()
-  blueprint_planner.register_events()
+  construction.register_events()
   tick_overlay.register_events()
 end
 
@@ -115,10 +115,10 @@ script.on_init(function()
   shared_utils.initialize_category_buffer("movement")
   shared_utils.initialize_category_buffer("production")
   shared_utils.initialize_category_buffer("gui")
-  shared_utils.initialize_category_buffer("blueprint_planner")
+  shared_utils.initialize_category_buffer("construction")
   
   log('[enhanced-player-logger] Category-based logging armed')
-  log('[enhanced-player-logger] Writing to: core-meta.jsonl, movement.jsonl, production.jsonl, gui.jsonl, blueprint_planner.jsonl')
+  log('[enhanced-player-logger] Writing to: core-meta.jsonl, movement.jsonl, production.jsonl, gui.jsonl, construction.jsonl')
   log('[tick-overlay] Tick overlay enabled for replays and multiplayer')
 end)
 
@@ -128,7 +128,7 @@ script.on_load(function()
   shared_utils.initialize_category_buffer("movement")
   shared_utils.initialize_category_buffer("production")
   shared_utils.initialize_category_buffer("gui")
-  shared_utils.initialize_category_buffer("blueprint_planner")
+  shared_utils.initialize_category_buffer("construction")
 end)
 
 -- Periodic flush every FLUSH_EVERY ticks
