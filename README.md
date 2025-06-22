@@ -1,29 +1,46 @@
 # Factorio Replay Analysis Tool
 
-A comprehensive tool for analyzing Factorio replay data by extracting player actions and game events into structured JSON logs.
+A comprehensive tool for analyzing Factorio replay data by extracting player actions and game events into categorized JSONL logs for detailed behavioral analysis.
 
 ## Overview
 
-This tool allows you to:
-- Extract detailed player actions and game events from Factorio replay files
-- Log all interactions to structured JSONL format for analysis
-- Analyze replay data using Python/pandas for insights into player behavior
+This tool provides:
+- **Category-based logging**: Events split into focused categories (movement, logistics, construction, GUI, etc.)
+- **Inventory state-diff tracking**: Deterministic inventory change detection using before/after snapshots
+- **Periodic world snapshots**: Complete item counts across all entities every N ticks
+- **Robust analysis tools**: Python scripts for mining replay data and generating process models
+- **Memory-efficient buffering**: Smart buffer management with automatic cleanup
+
+## New Architecture (v2.0)
+
+### Modular Logging System
+The logging system has been completely refactored into specialized modules:
+
+- **`core-meta.jsonl`**: Player join/leave events and replay markers
+- **`movement.jsonl`**: Player position changes and movement patterns
+- **`logistics.jsonl`**: Inventory transfers, fast-transfers, and item operations with exact deltas
+- **`construction.jsonl`**: Building placement, mining, blueprint operations
+- **`gui.jsonl`**: Interface interactions and menu usage
+- **`snapshot.jsonl`**: Periodic complete world state snapshots
+
+### State-Diff Based Inventory Tracking
+Instead of guessing from event payloads, the system now:
+- Takes inventory snapshots before and after operations
+- Calculates exact item deltas between snapshots
+- Logs precise inventory changes rather than estimates
 
 ## Prerequisites
 
 - **Factorio** installed on macOS
-- **Python 3.8+** with pandas for data analysis
+- **Python 3.8+** with pandas, pm4py for process mining analysis
 - **Bash** shell (scripts are macOS-specific for now)
 
-## Workflow
+## Quick Start
 
 ### 1. Prepare Factorio Saves
 
-Download Factorio saves to the `./saves/` directory. The saves must:
-- Be extracted as directories (not zip files)
-- Contain a `replay.dat` file for replay functionality
+Download Factorio saves to the `./saves/` directory:
 
-**Example structure:**
 ```
 ./saves/
 ├── my_save_1/
@@ -38,62 +55,136 @@ Download Factorio saves to the `./saves/` directory. The saves must:
 
 ### 2. Setup Logging for a Save
 
-Use the helper script to prepare a save for replay logging:
-
 ```bash
 ./replay-lab/setup-logging-on-save.sh ./saves/your_save_name
 ```
 
-This script will:
-- Copy the logging `control.lua` file to your save directory
-- Zip the save with the correct directory structure
-- Copy the zip to Factorio's saves directory (`~/Library/Application Support/factorio/saves/`)
-
-**Note:** This script currently only works on macOS.
+This script:
+- Copies all modular logging scripts to your save directory
+- Zips the save with proper structure
+- Copies to Factorio's saves directory (`~/Library/Application Support/factorio/saves/`)
 
 ### 3. Run the Replay in Factorio
 
-1. Open Factorio
-2. Go to **Main Menu** → **Single Player** → **Load Game**
-3. Select the save you prepared in step 2
-4. You'll see a **play icon** (▶️) in the top-right corner of the GUI
-5. Click the play icon to start the replay
-6. **Important:** Speed up the replay to **64x** to hasten the logging process
+1. Open Factorio → **Single Player** → **Load Game**
+2. Select your prepared save (look for the ▶️ play icon)
+3. Click play icon to start replay
+4. **Speed up to 64x** for faster logging
 
-The replay will automatically log all player actions and game events to:
+The replay automatically logs to categorized files:
 ```
-~/Library/Application Support/factorio/script-output/factorio_replays/replay-log.jsonl
+~/Library/Application Support/factorio/script-output/replay-logs/
+├── core-meta.jsonl
+├── movement.jsonl
+├── logistics.jsonl
+├── construction.jsonl
+├── gui.jsonl
+├── snapshot.jsonl
+└── snapshot-*.json
 ```
 
 ### 4. Copy Replay Data
 
-When the replay finishes (for now you'll need to manually detect this), copy the replay data:
-
 ```bash
-# Copy with timestamp-based naming (recommended)
+# Copy with timestamp-based naming
 ./replay-lab/copy-replay.sh
 
-# Or force overwrite existing file
+# Or force overwrite
 ./replay-lab/copy-replay.sh --force
 ```
 
-This copies the replay log to `./factorio_replays/` with a timestamp-based filename or as `replay-log.jsonl`.
+### 5. Analyze the Data
 
-### 5. Analyze the Data (Optional)
-
-Load and analyze the JSONL data using pandas:
-
+#### Load Categorized Data
 ```python
 import pandas as pd
 
-# Load the replay data
-df = pd.read_json('./factorio_replays/factorio_replay_YYYYMMDD_HHMMSS.jsonl', lines=True)
+# Load specific categories
+movement_df = pd.read_json('./factorio_replays/replay-logs/movement.jsonl', lines=True)
+logistics_df = pd.read_json('./factorio_replays/replay-logs/logistics.jsonl', lines=True)
+construction_df = pd.read_json('./factorio_replays/replay-logs/construction.jsonl', lines=True)
 
-# Explore the data
-print(df.head())
-print(df.columns)
-print(df['action'].value_counts())
+# Explore movement patterns
+print("Movement events:", len(movement_df))
+print("Construction events:", len(construction_df))
+print("Logistics events:", len(logistics_df))
 ```
+
+#### Process Mining Analysis
+```bash
+# Mine behavioral patterns from replay data
+python analysis/factorio_mining.py ./factorio_replays/replay-logs/construction.jsonl --outdir results/
+
+# Mine movement traces
+python analysis/mine_factorio_traces.py --category movement --outdir movement_analysis/
+```
+
+## Category Details
+
+### Movement (`movement.jsonl`)
+- Player position changes
+- Walking patterns and pathfinding
+- Position context for other events
+
+### Logistics (`logistics.jsonl`)
+- Fast transfers with exact item deltas
+- Inventory operations and item movements
+- State-diff based inventory tracking
+- Precise before/after inventory snapshots
+
+Example logistics event:
+```json
+{
+  "t": 1234,
+  "p": 1,
+  "ev": "on_player_fast_transferred",
+  "act": "transfer",
+  "direction": "player_to_entity",
+  "ent": "iron-chest",
+  "delta_player": "iron-plate:-50,copper-plate:-25",
+  "delta_entity": "iron-plate:50,copper-plate:25"
+}
+```
+
+### Construction (`construction.jsonl`)
+- Entity placement and removal
+- Mining operations
+- Blueprint creation and deployment
+- Building rotations and configurations
+
+### GUI (`gui.jsonl`)
+- Interface interactions
+- Menu opening/closing
+- Inventory panel usage
+- Settings changes
+
+### Snapshots (`snapshot.jsonl` + `snapshot-*.json`)
+Complete world state every N ticks (default: 100,000 ≈ 28 minutes):
+- All player inventories
+- All entity inventories (chests, machines, etc.)
+- Items on ground
+- Fluid storage
+
+## Analysis Tools
+
+### `analysis/factorio_mining.py`
+Advanced process mining with PM4Py:
+- Segments traces into cases
+- Filters low-frequency variants
+- Discovers Petri nets
+- Performs conformance checking
+
+### `analysis/mine_factorio_traces.py`
+Specialized trace analysis:
+- Category-specific mining
+- Behavioral pattern detection
+- Time-series analysis
+
+### `analysis/mine_factorio_replay.py`
+Legacy replay.dat parser:
+- Direct replay file parsing
+- Lightweight event extraction
+- PM4Py integration
 
 ## File Structure
 
@@ -101,50 +192,103 @@ print(df['action'].value_counts())
 factorio-rnd/
 ├── saves/                          # Factorio save directories
 ├── factorio_replays/               # Extracted replay logs
+│   └── replay-logs/                # Categorized JSONL files
+├── analysis/                       # Python analysis tools
+│   ├── factorio_mining.py         # Advanced process mining
+│   ├── mine_factorio_traces.py    # Trace analysis
+│   └── mine_factorio_replay.py    # Legacy replay parser
 ├── replay-lab/
-│   ├── control.lua                 # Factorio mod for logging
-│   ├── setup-logging-on-save.sh    # Setup script for saves
-│   └── copy-replay.sh              # Copy replay data script
+│   ├── lua-scripts/               # Modular logging system
+│   │   ├── control.lua           # Main controller
+│   │   ├── shared-utils.lua      # Common utilities
+│   │   ├── movement.lua          # Movement tracking
+│   │   ├── logistics.lua         # Inventory & transfers
+│   │   ├── construction.lua      # Building operations
+│   │   ├── gui.lua              # Interface tracking
+│   │   └── snapshot.lua         # World snapshots
+│   ├── setup-logging-on-save.sh  # Setup script
+│   ├── copy-replay.sh            # Data extraction
+│   ├── PRODUCTION_REFACTOR_README.md  # Technical details
+│   └── SNAPSHOT_README.md        # Snapshot system docs
 └── README.md
 ```
 
-## Logged Data
+## Key Improvements in v0.3
 
-The replay logging captures various player actions and game events including:
+### 1. **Deterministic Inventory Tracking**
+- State-diff layer eliminates guesswork
+- Exact item deltas for all transfers
+- Robust handling of bulk operations
 
-- **Building actions**: Placing/removing entities
-- **Mining actions**: Mining resources and entities
-- **Inventory operations**: Moving items, crafting
-- **Blueprint operations**: Creating, using, and managing blueprints
-- **Player movement**: Position changes and context
-- **GUI interactions**: Opening/closing interfaces
-- **Research**: Technology research actions
+### 2. **Category-Based Organization**
+- Events logically separated by domain
+- Easier analysis of specific behaviors
+- Reduced noise in focused datasets
 
-Each log entry includes:
-- Timestamp and tick number
-- Player information
-- Action type and details
-- Entity/item information
-- Player context (position, selected items, etc.)
+### 3. **Memory Management**
+- Automatic buffer flushing every 10 seconds
+- Inventory snapshot cleanup
+- Configurable memory limits
 
-## WIP
+### 4. **Comprehensive Coverage**
+- World snapshots for complete state tracking
+- Replay start/end markers
+- Enhanced player context
 
-This project is still a work in progress, it does not guarantee that the complete set of logs needed to confirm all gameplay activity are logged, doing this comprehensively is the actual intent of the repo. 
+## Configuration
+
+### Snapshot Frequency
+Modify `SNAPSHOT_INTERVAL` in `snapshot.lua`:
+```lua
+local SNAPSHOT_INTERVAL = 100000  -- Every ~28 minutes
+```
+
+### Buffer Settings
+Adjust flush frequency in `control.lua`:
+```lua
+local FLUSH_EVERY = 600  -- Every 10 seconds at 60 UPS
+```
 
 ## Troubleshooting
 
 ### Common Issues
 
-1. **"replay.dat not found"**: Ensure your save directory contains a `replay.dat` file
-2. **Script permission errors**: Make scripts executable with `chmod +x replay-lab/*.sh`
-3. **Factorio not finding save**: Check that the save was properly copied to Factorio's saves directory
-4. **No play button**: Ensure the save contains replay data and was properly prepared
+1. **Missing category files**: Check if all lua scripts are copied to save directory
+2. **Large file sizes**: Increase snapshot interval for long replays
+3. **Memory issues**: Reduce buffer size or flush frequency
+4. **Analysis errors**: Ensure pandas/pm4py are installed
 
-### Manual Steps
+### Performance Tips
 
-- **Detecting replay completion**: Currently manual - watch for the replay to finish
-- **Multiple replays**: Each replay will overwrite the previous log file unless you copy it first
+- **Speed up replays to 64x** for faster logging
+- **Monitor file sizes** - logistics.jsonl can grow large
+- **Use snapshots** for long-term analysis instead of full event logs
+
+## Advanced Usage
+
+### Custom Event Filtering
+Modify individual category modules to filter specific events:
+
+```lua
+-- In logistics.lua, skip small transfers
+if total_transferred < 10 then
+  return false  -- Skip logging
+end
+```
+
+### Integration with External Tools
+Category-based logs are designed for:
+- **Process mining** with PM4Py
+- **Time-series analysis** with pandas
+- **Behavioral modeling** with scikit-learn
+- **Visualization** with matplotlib/plotly
 
 ## Development
 
-The logging system is implemented as a Factorio psuedo-mod in `replay-lab/control.lua`. It hooks into various game events and logs them to JSONL format for easy analysis.
+The modular architecture makes it easy to:
+- Add new event categories
+- Modify existing loggers
+- Integrate with analysis pipelines
+- Extend snapshot functionality
+
+See `PRODUCTION_REFACTOR_README.md` and `SNAPSHOT_README.md` for technical implementation details.
