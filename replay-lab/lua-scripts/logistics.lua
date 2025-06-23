@@ -27,6 +27,13 @@ function logistics.log_inventory_change(record)
   if record.context and record.context.position then
     record.x = string.format("%.1f", record.context.position.x)
     record.y = string.format("%.1f", record.context.position.y)
+  else
+    -- Fallback to player position if no position in context
+    local player = game.players[record.player]
+    if player and player.valid and player.position then
+      record.x = string.format("%.1f", player.position.x)
+      record.y = string.format("%.1f", player.position.y)
+    end
   end
 
   local clean_record = shared_utils.clean_record(record)
@@ -415,7 +422,7 @@ function logistics.handle_pre_crafted_item(event)
           recipe = event.recipe.name,
           item = event.item_stack and event.item_stack.name,
           queued_count = queued_count
-        }
+        }  -- Position will be filled from player position in log_inventory_change
       }
     end
   end
@@ -446,7 +453,7 @@ function logistics.handle_cancelled_crafting(event)
         item = event.item_stack.name,
         count = event.item_stack.count,
         cancel_count = cancel_count
-      }
+      }  -- Position will be filled from player position in log_inventory_change
     }
   end
 
@@ -470,7 +477,7 @@ function logistics.handle_crafted_item(event)
     context = {
       action = "craft_complete",
       recipe = event.recipe and event.recipe.name
-    }
+    }  -- Position will be filled from player position in log_inventory_change
   }
 
   logistics.update_player_snapshot(event.player_index)
@@ -525,7 +532,7 @@ function logistics.handle_mined_item(event)
     delta = event.item_stack.count,
     source = "resource",
     destination = "player",
-    context = { action = "mine_item" }
+    context = { action = "mine_item" }  -- Position will be filled from player position in log_inventory_change
   }
 
   logistics.update_player_snapshot(event.player_index)
