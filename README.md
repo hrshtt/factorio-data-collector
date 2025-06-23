@@ -11,23 +11,24 @@ This tool provides:
 - **Robust analysis tools**: Python scripts for mining replay data and generating process models
 - **Memory-efficient buffering**: Smart buffer management with automatic cleanup
 
-## New Architecture (v2.0)
+## New Architecture (v0.2)
 
 ### Modular Logging System
 The logging system has been completely refactored into specialized modules:
 
 - **`core-meta.jsonl`**: Player join/leave events and replay markers
 - **`movement.jsonl`**: Player position changes and movement patterns
-- **`logistics.jsonl`**: Inventory transfers, fast-transfers, and item operations with exact deltas
+- **`logistics.jsonl`**: Unified inventory change tracking with diff-based detection and precise item deltas
 - **`construction.jsonl`**: Building placement, mining, blueprint operations
 - **`gui.jsonl`**: Interface interactions and menu usage
 - **`snapshot.jsonl`**: Periodic complete world state snapshots
 
-### State-Diff Based Inventory Tracking
-Instead of guessing from event payloads, the system now:
-- Takes inventory snapshots before and after operations
-- Calculates exact item deltas between snapshots
-- Logs precise inventory changes rather than estimates
+### Unified Inventory Change Tracking
+The new logistics system uses a hybrid approach:
+- **GUI diff listener**: Detects manual transfers through inventory GUIs
+- **Direct event logging**: Captures fast-transfers, crafting, mining immediately
+- **Context tracking**: Prevents double-logging and provides rich action metadata
+- **Single log function**: All inventory changes flow through `log_inventory_change()`
 
 ## Prerequisites
 
@@ -127,22 +128,26 @@ python analysis/mine_factorio_traces.py --category movement --outdir movement_an
 - Position context for other events
 
 ### Logistics (`logistics.jsonl`)
-- Fast transfers with exact item deltas
-- Inventory operations and item movements
-- State-diff based inventory tracking
-- Precise before/after inventory snapshots
+- Unified inventory change detection with single `log_inventory_change()` function
+- GUI diff listener for manual transfers (drag, drop, arrow buttons)
+- Direct event logging for fast-transfers, crafting, mining, building
+- One log entry per item type per change (no double-logging)
+- Context tracking prevents missed transfers
 
 Example logistics event:
 ```json
 {
-  "t": 1234,
-  "p": 1,
-  "ev": "on_player_fast_transferred",
-  "act": "transfer",
-  "direction": "player_to_entity",
-  "ent": "iron-chest",
-  "delta_player": "iron-plate:-50,copper-plate:-25",
-  "delta_entity": "iron-plate:50,copper-plate:25"
+  "tick": 1234,
+  "player": 1,
+  "item": "iron-plate",
+  "delta": -50,
+  "source": "player",
+  "destination": "iron-chest",
+  "context": {
+    "action": "gui_transfer",
+    "entity": "iron-chest",
+    "position": {"x": 12.5, "y": 8.0}
+  }
 }
 ```
 

@@ -16,7 +16,7 @@ local logistics = require("logistics")
 local gui = require("gui")
 local construction = require("construction")
 local tick_overlay = require("tick_overlay")
-local snapshot = require("snapshot")
+-- local snapshot = require("snapshot")
 
 -- ============================================================================
 -- CONFIGURATION
@@ -107,7 +107,7 @@ function main.initialize()
   tick_overlay.register_events()
   
   -- Initialize snapshot system
-  snapshot.initialize()
+  -- snapshot.initialize()
 end
 
 -- ============================================================================
@@ -119,11 +119,11 @@ script.on_init(function()
   shared_utils.initialize_category_buffer("movement")
   shared_utils.initialize_category_buffer("logistics")
   shared_utils.initialize_category_buffer("gui")
-  shared_utils.initialize_category_buffer("construction")
-  shared_utils.initialize_category_buffer("snapshot")
+  -- shared_utils.initialize_category_buffer("construction")
+  -- shared_utils.initialize_category_buffer("snapshot")
   
   log('[enhanced-player-logger] Category-based logging armed')
-  log('[enhanced-player-logger] Writing to: core-meta.jsonl, movement.jsonl, logistics.jsonl, gui.jsonl, construction.jsonl, snapshot.jsonl')
+  log('[enhanced-player-logger] Writing to: core-meta.jsonl, movement.jsonl, logistics.jsonl, gui.jsonl, construction.jsonl')
   log('[tick-overlay] Tick overlay enabled for replays and multiplayer')
 end)
 
@@ -134,17 +134,12 @@ script.on_load(function()
   shared_utils.initialize_category_buffer("logistics")
   shared_utils.initialize_category_buffer("gui")
   shared_utils.initialize_category_buffer("construction")
-  shared_utils.initialize_category_buffer("snapshot")
+  -- shared_utils.initialize_category_buffer("snapshot")
 end)
 
 -- Periodic flush every FLUSH_EVERY ticks
 script.on_nth_tick(FLUSH_EVERY, function()
   shared_utils.flush_all_buffers()
-  
-  -- Clean up old inventory snapshots to prevent memory bloat
-  if logistics and logistics.cleanup_snapshots then
-    logistics.cleanup_snapshots()
-  end
 end)
 
 -- ============================================================================
