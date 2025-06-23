@@ -7,11 +7,12 @@ A comprehensive tool for analyzing Factorio replay data by extracting player act
 This tool provides:
 - **Category-based logging**: Events split into focused categories (movement, logistics, construction, GUI, etc.)
 - **Inventory state-diff tracking**: Deterministic inventory change detection using before/after snapshots
+- **State-driven construction tracking**: Context-aware construction logging following the logistics pattern
 - **Periodic world snapshots**: Complete item counts across all entities every N ticks
 - **Robust analysis tools**: Python scripts for mining replay data and generating process models
 - **Memory-efficient buffering**: Smart buffer management with automatic cleanup
 
-## New Architecture (v0.2)
+## New Architecture (v0.3)
 
 ### Modular Logging System
 The logging system has been completely refactored into specialized modules:
@@ -19,12 +20,46 @@ The logging system has been completely refactored into specialized modules:
 - **`core-meta.jsonl`**: Player join/leave events and replay markers
 - **`movement.jsonl`**: Player position changes and movement patterns
 - **`logistics.jsonl`**: Unified inventory change tracking with diff-based detection and precise item deltas
-- **`construction.jsonl`**: Building placement, mining, blueprint operations
+- **`construction.jsonl`**: **State-driven** building placement, mining, blueprint operations with context tracking
 - **`gui.jsonl`**: Interface interactions and menu usage
 - **`snapshot.jsonl`**: Periodic complete world state snapshots
 
+### State-Driven Construction Tracking
+The construction system now follows the logistics pattern with:
+- **Context tracking**: GUI state and ephemeral contexts provide rich action metadata
+- **Event-driven logging**: Direct event capture with contextual enhancement
+- **Blueprint session tracking**: Blueprint library/book usage with session duration
+- **Unified logging**: All construction actions flow through `log_construction_action()`
+- **Memory efficient**: No entity polling - only tracks active construction contexts
+
+### Construction (`construction.jsonl`)
+- **State-driven approach** similar to logistics module
+- Entity placement and removal with context
+- Mining operations
+- Blueprint creation and deployment with session tracking
+- Building rotations and configurations
+- Equipment placement/removal
+- Context-aware action logging (build zones, blueprint sessions, etc.)
+
+Example construction event:
+```json
+{
+  "tick": 1234,
+  "player": 1,
+  "action": "build",
+  "entity": "assembling-machine-1",
+  "context": {
+    "action": "build",
+    "entity": "assembling-machine-1",
+    "position": {"x": 12.5, "y": 8.0},
+    "from_blueprint": true,
+    "blueprint_digest": "0eNpdy9EKgz..."
+  }
+}
+```
+
 ### Unified Inventory Change Tracking
-The new logistics system uses a hybrid approach:
+The logistics system uses a hybrid approach:
 - **GUI diff listener**: Detects manual transfers through inventory GUIs
 - **Direct event logging**: Captures fast-transfers, crafting, mining immediately
 - **Context tracking**: Prevents double-logging and provides rich action metadata
@@ -220,25 +255,26 @@ factorio-rnd/
 
 ## Key Improvements in v0.3
 
-### 1. **Deterministic Inventory Tracking**
+### 1. **State-Driven Construction Logging**
+- Context-aware construction tracking following logistics pattern
+- Blueprint session management with duration tracking
+- Ephemeral context for multi-event construction sequences
+- No performance-heavy entity polling
+
+### 2. **Deterministic Inventory Tracking**
 - State-diff layer eliminates guesswork
 - Exact item deltas for all transfers
 - Robust handling of bulk operations
 
-### 2. **Category-Based Organization**
+### 3. **Category-Based Organization**
 - Events logically separated by domain
 - Easier analysis of specific behaviors
 - Reduced noise in focused datasets
 
-### 3. **Memory Management**
+### 4. **Memory Management**
 - Automatic buffer flushing every 10 seconds
 - Inventory snapshot cleanup
 - Configurable memory limits
-
-### 4. **Comprehensive Coverage**
-- World snapshots for complete state tracking
-- Replay start/end markers
-- Enhanced player context
 
 ## Configuration
 

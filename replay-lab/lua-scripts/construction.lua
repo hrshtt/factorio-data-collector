@@ -1,7 +1,7 @@
 --@construction.lua
---@description Construction category logging module - building, blueprints, and factory layout
+--@description State-driven construction logging with context tracking (following logistics pattern)
 --@author Harshit Sharma
---@version 2.0.0
+--@version 3.0.0
 --@date 2025-01-27
 --@license MIT
 
@@ -9,300 +9,323 @@ local shared_utils = require("shared-utils")
 local construction = {}
 
 -- ============================================================================
--- EVENT REGISTRATION
+-- CORE LOGGING FUNCTION
 -- ============================================================================
-function construction.register_events()
-  -- Define event handlers after all functions are defined
-  local EVENT_HANDLERS = {
-    -- Construction events (moved from production)
-    on_built_entity = construction.handle_built_entity,
-    on_player_built_tile = construction.handle_built_tile,
-    on_player_rotated_entity = construction.handle_rotated_entity,
-    on_player_placed_equipment = construction.handle_placed_equipment,
-    on_player_removed_equipment = construction.handle_removed_equipment,
-    
-    -- Blueprint events (existing from blueprint_planner)
-    on_player_setup_blueprint = construction.handle_setup_blueprint,
-    on_player_configured_blueprint = construction.handle_configured_blueprint,
-    on_player_deconstructed_area = construction.handle_deconstructed_area,
-    
-    -- Settings paste events (new)
-    on_entity_settings_pasted = construction.handle_entity_settings_pasted
+
+function construction.log_construction_action(record)
+  -- record = {
+  --   tick         = <number>,
+  --   player       = <index>,
+  --   action       = <string>,
+  --   entity       = <string>,
+  --   context      = <table>
+  -- }
+  
+  -- Add position if available in context
+  if record.context and record.context.position then
+    record.x = string.format("%.1f", record.context.position.x)
+    record.y = string.format("%.1f", record.context.position.y)
+  end
+  
+  local clean_record = shared_utils.clean_record(record)
+  local json = game.table_to_json(clean_record)
+  shared_utils.buffer_event("construction", json)
+end
+
+-- ============================================================================
+-- PLAYER CONTEXT MANAGEMENT (same pattern as logistics)
+-- ============================================================================
+
+function construction.get_player_context(player_index)
+  if not global.construction_contexts then
+    global.construction_contexts = {}
+  end
+  
+  if not global.construction_contexts[player_index] then
+    global.construction_contexts[player_index] = {
+      gui = nil,           -- Same as logistics: track GUI context
+      ephemeral = nil,     -- Same as logistics: temporary action context
+      blueprint_state = {} -- Simple blueprint tracking
+    }
+  end
+  
+  return global.construction_contexts[player_index]
+end
+
+function construction.initialize()
+  if not global.construction_contexts then
+    global.construction_contexts = {}
+  end
+end
+
+-- ============================================================================
+-- GUI CONTEXT TRACKING (adapted from logistics pattern)
+-- ============================================================================
+
+function construction.handle_gui_opened(event)
+  if event.gui_type == defines.gui_type.blueprint_library and event.player_index then
+    local ctx = construction.get_player_context(event.player_index)
+    ctx.gui = {
+      type = "blueprint_library",
+      opened_tick = event.tick
+    }
+  elseif event.gui_type == defines.gui_type.blueprint_book and event.player_index then
+    local ctx = construction.get_player_context(event.player_index)
+    ctx.gui = {
+      type = "blueprint_book", 
+      opened_tick = event.tick
+    }
+  end
+end
+
+function construction.handle_gui_closed(event)
+  if not event.player_index then
+    return
+  end
+
+  local ctx = global.construction_contexts and global.construction_contexts[event.player_index]
+  if ctx and ctx.gui then
+    -- Log blueprint session if it was a blueprint-related GUI
+    if ctx.gui.type == "blueprint_library" or ctx.gui.type == "blueprint_book" then
+      construction.log_construction_action{
+        tick = event.tick,
+        player = event.player_index,
+        action = "blueprint_session",
+        context = {
+          action = "blueprint_session_ended",
+          gui_type = ctx.gui.type,
+          duration = event.tick - (ctx.gui.opened_tick or event.tick)
+        }
+      }
+    end
+    ctx.gui = nil
+  end
+end
+
+-- ============================================================================
+-- DIRECT EVENT HANDLERS (following logistics pattern exactly)
+-- ============================================================================
+
+function construction.handle_built_entity(event)
+  if not shared_utils.is_player_event(event) then
+    return
+  end
+  
+  -- Set ephemeral context (like logistics does for builds)
+  local ctx = construction.get_player_context(event.player_index)
+  ctx.ephemeral = {
+    action = "build",
+    entity = event.created_entity and event.created_entity.name,
+    position = event.created_entity and event.created_entity.position
   }
   
-  -- Register all events from the registry
-  for event_name, handler in pairs(EVENT_HANDLERS) do
-    script.on_event(defines.events[event_name], function(e)
-      if shared_utils.is_player_event(e) then
-        handler(e)
-      end
-    end)
-  end
+  -- Direct logging for construction action
+  construction.log_construction_action{
+    tick = event.tick,
+    player = event.player_index,
+    action = "build",
+    entity = event.created_entity and event.created_entity.name,
+    context = ctx.ephemeral
+  }
+  
+  -- Clear ephemeral like logistics does
+  ctx.ephemeral = nil
 end
 
--- ============================================================================
--- CONSTRUCTION EVENT HANDLERS
--- ============================================================================
-
--- Generic handler for construction events
-function construction.handle_construction_event(event_name, event_data, action_name, extract_context)
-  local player = event_data.player_index and game.players[event_data.player_index]
-  
-  -- Create base record
-  local rec = shared_utils.create_base_record(event_name, event_data)
-  rec.act = action_name
-  
-  -- Extract additional context if provided
-  if extract_context then
-    extract_context(event_data, rec, player)
+function construction.handle_mined_entity(event)
+  if not shared_utils.is_player_event(event) then
+    return
   end
   
-  -- Add player context if missing
-  shared_utils.add_player_context_if_missing(rec, player)
-  
-  -- Clean and buffer
-  local clean_rec = shared_utils.clean_record(rec)
-  shared_utils.buffer_event("construction", game.table_to_json(clean_rec))
+  construction.log_construction_action{
+    tick = event.tick,
+    player = event.player_index,
+    action = "mine",
+    entity = event.entity and event.entity.name,
+    context = {
+      action = "mine",
+      entity = event.entity and event.entity.name,
+      position = event.entity and event.entity.position
+    }
+  }
 end
 
--- Simple entity action handler
-function construction.handle_entity_action(event_name, event_data, action_name, entity_field)
-  construction.handle_construction_event(event_name, event_data, action_name, function(e, rec, player)
-    if e[entity_field or "entity"] then
-      rec.ent = shared_utils.get_entity_info(e[entity_field or "entity"])
-    end
-  end)
-end
-
--- ============================================================================
--- SPECIFIC CONSTRUCTION HANDLERS
--- ============================================================================
-
-function construction.handle_built_entity(e)
-  construction.handle_entity_action("on_built_entity", e, "build", "created_entity")
-end
-
-function construction.handle_built_tile(e)
-  construction.handle_construction_event("on_player_built_tile", e, "build_tile", function(e, rec, player)
-    if e.tile then
-      rec.tile = e.tile.name
-    end
-    
-    if e.item then
-      rec.item = e.item.name
-    end
-    
-    if e.stack and e.stack.valid_for_read and e.stack.count > 0 then
-      rec.stack_item = e.stack.name
-      rec.stack_count = e.stack.count
-    end
-    
-    if e.surface_index then
-      rec.surface = e.surface_index
-    end
-    
-    if e.tiles and #e.tiles > 0 then
-      rec.tile_count = #e.tiles
-      local positions = {}
-      for i = 1, math.min(3, #e.tiles) do
-        local tile_data = e.tiles[i]
-        if tile_data and tile_data.position then
-          table.insert(positions, {x = tile_data.position.x, y = tile_data.position.y})
-        end
-      end
-      if #positions > 0 then
-        rec.tile_positions = game.table_to_json(positions)
-      end
-    end
-  end)
-end
-
-function construction.handle_rotated_entity(e)
-  construction.handle_entity_action("on_player_rotated_entity", e, "rotate")
-end
-
-function construction.handle_placed_equipment(e)
-  construction.handle_entity_action("on_player_placed_equipment", e, "place_equipment", "equipment")
-end
-
-function construction.handle_removed_equipment(e)
-  construction.handle_entity_action("on_player_removed_equipment", e, "remove_equipment", "equipment")
-end
-
-function construction.handle_entity_settings_pasted(e)
-  construction.handle_construction_event("on_entity_settings_pasted", e, "paste_settings", function(e, rec, player)
-    if e.destination then
-      rec.ent = shared_utils.get_entity_info(e.destination)
-    end
-    if e.source then
-      rec.source_ent = shared_utils.get_entity_info(e.source)
-    end
-  end)
-end
-
--- ============================================================================
--- BLUEPRINT UTILITIES
--- ============================================================================
-function construction.extract_blueprint_data(bp_stack, tag, tick, player_idx)
-  -- Safety checks
-  if not (bp_stack and bp_stack.valid_for_read and bp_stack.is_blueprint_setup()) then
-    return nil -- Nothing to extract
+function construction.handle_rotated_entity(event)
+  if not shared_utils.is_player_event(event) then
+    return
   end
   
-  local success, bp_data = pcall(function()
-    -- Extract blueprint data safely
-    local data = {}
-    
-    -- Basic metadata
-    data.tick = tick
-    data.player = player_idx
-    data.phase = tag
-    
-    -- Blueprint string (safe for export/import)
-    local export_success, bp_string = pcall(function()
-      return bp_stack.export_stack()
-    end)
-    if export_success and bp_string then
-      -- Store the actual blueprint string in the data
-      data.bp_string = bp_string
-      
-      -- Create a more reliable digest using first 32 chars of blueprint string
-      -- This avoids hash collisions since blueprint strings are deterministic
-      if #bp_string >= 32 then
-        data.bp_digest = string.sub(bp_string, 1, 32)
-      else
-        data.bp_digest = bp_string -- Use full string if shorter than 32 chars
-      end
-    end
-    
-    -- Entity data
-    local entities_success, entities = pcall(function()
-      return bp_stack.get_blueprint_entities() or {}
-    end)
-    if entities_success and entities then
-      data.entity_count = #entities
-      -- Store first few entities for quick inspection (limit to avoid huge logs)
-      if #entities > 0 then
-        data.sample_entities = {}
-        for i = 1, math.min(5, #entities) do
-          local ent = entities[i]
-          if ent and ent.name then
-            table.insert(data.sample_entities, {
-              name = ent.name,
-              position = ent.position
-            })
-          end
-        end
-      end
-    end
-    
-    -- Tile data
-    local tiles_success, tiles = pcall(function()
-      return bp_stack.get_blueprint_tiles and bp_stack.get_blueprint_tiles() or {}
-    end)
-    if tiles_success and tiles then
-      data.tile_count = #tiles
-    end
-    
-    return data
-  end)
-  
-  if not success then
-    -- Log the error but don't crash
-    log("[construction-logger] Error extracting blueprint data: " .. tostring(bp_data))
-    return nil
-  end
-  
-  return bp_data
+  construction.log_construction_action{
+    tick = event.tick,
+    player = event.player_index,
+    action = "rotate",
+    entity = event.entity and event.entity.name,
+    context = {
+      action = "rotate",
+      entity = event.entity and event.entity.name,
+      position = event.entity and event.entity.position,
+      previous_direction = event.previous_direction,
+      direction = event.entity.direction
+    }
+  }
 end
 
-function construction.get_blueprint_stack_safely(event, player)
-  -- Try multiple sources for the blueprint stack based on event type
-  local stack = nil
-  
-  if player and player.cursor_stack then
-    -- For configured blueprint (usually in cursor)
-    stack = player.cursor_stack
-  elseif event.stack then
-    -- Direct stack from event (on_player_setup_blueprint in v1.1+)
-    stack = event.stack
-  elseif player and player.opened_gui_type == defines.gui_type.item and player.opened then
-    -- Blueprint in opened GUI
-    stack = player.opened
-  elseif player and player.blueprint_to_setup then
-    -- Fallback for setup phase
-    stack = player.blueprint_to_setup
+function construction.handle_built_tile(event)
+  if not shared_utils.is_player_event(event) then
+    return
   end
   
-  -- Validate the stack
-  if stack and stack.valid_for_read and stack.is_blueprint_setup and stack.is_blueprint_setup() then
-    return stack
+  construction.log_construction_action{
+    tick = event.tick,
+    player = event.player_index,
+    action = "build_tile",
+    context = {
+      action = "build_tile",
+      tile = event.tile and event.tile.name,
+      item = event.item and event.item.name,
+      tile_count = event.tiles and #event.tiles or 1,
+      surface = event.surface_index
+    }
+  }
+end
+
+function construction.handle_placed_equipment(event)
+  if not shared_utils.is_player_event(event) then
+    return
   end
   
-  return nil
+  construction.log_construction_action{
+    tick = event.tick,
+    player = event.player_index,
+    action = "place_equipment",
+    context = {
+      action = "place_equipment",
+      equipment = event.equipment and event.equipment.name
+    }
+  }
+end
+
+function construction.handle_removed_equipment(event)
+  if not shared_utils.is_player_event(event) then
+    return
+  end
+  
+  construction.log_construction_action{
+    tick = event.tick,
+    player = event.player_index,
+    action = "remove_equipment", 
+    context = {
+      action = "remove_equipment",
+      equipment = event.equipment and event.equipment.name
+    }
+  }
 end
 
 -- ============================================================================
--- BLUEPRINT EVENT HANDLERS
+-- BLUEPRINT HANDLERS (simplified, no complex state tracking)
 -- ============================================================================
-function construction.handle_setup_blueprint(e)
-  construction.handle_construction_event("on_player_setup_blueprint", e, "blueprint_setup", function(e, rec, player)
-    if e.area then
-      rec.area_x1 = string.format("%.1f", e.area.left_top.x)
-      rec.area_y1 = string.format("%.1f", e.area.left_top.y)
-      rec.area_x2 = string.format("%.1f", e.area.right_bottom.x)
-      rec.area_y2 = string.format("%.1f", e.area.right_bottom.y)
-    end
-    if e.item then
-      rec.item = e.item
-    end
-    if e.entities and #e.entities > 0 then
-      rec.entity_count = #e.entities
-    end
-    
-    -- Enhanced blueprint logging - extract and log full blueprint data
-    local bp_stack = construction.get_blueprint_stack_safely(e, player)
-    if bp_stack then
-      local bp_data = construction.extract_blueprint_data(bp_stack, "setup", e.tick, e.player_index)
-      if bp_data then
-        rec.bp_digest = bp_data.bp_digest
-        rec.bp_string = bp_data.bp_string
-        rec.bp_entity_count = bp_data.entity_count
-      end
-    end
-  end)
+
+function construction.handle_setup_blueprint(event)
+  if not shared_utils.is_player_event(event) then
+    return
+  end
+  
+  local ctx = construction.get_player_context(event.player_index)
+  
+  -- Simple blueprint context (like logistics ephemeral)
+  ctx.ephemeral = {
+    action = "blueprint_setup",
+    area = event.area,
+    entities_count = event.entities and #event.entities or 0
+  }
+  
+  construction.log_construction_action{
+    tick = event.tick,
+    player = event.player_index,
+    action = "blueprint_setup",
+    context = ctx.ephemeral
+  }
+  
+  -- Don't clear ephemeral yet - let it persist to next blueprint event
 end
 
-function construction.handle_configured_blueprint(e)
-  construction.handle_construction_event("on_player_configured_blueprint", e, "blueprint_confirmed", function(e, rec, player)
-    -- Enhanced blueprint logging - the blueprint is now in the player's cursor
-    local bp_stack = construction.get_blueprint_stack_safely(e, player)
-    if bp_stack then
-      local bp_data = construction.extract_blueprint_data(bp_stack, "confirm", e.tick, e.player_index)
-      if bp_data then
-        rec.bp_digest = bp_data.bp_digest
-        rec.bp_string = bp_data.bp_string
-        rec.bp_entity_count = bp_data.entity_count
-      end
-    end
-  end)
+function construction.handle_configured_blueprint(event)
+  if not shared_utils.is_player_event(event) then
+    return
+  end
+  
+  local ctx = construction.get_player_context(event.player_index)
+  
+  construction.log_construction_action{
+    tick = event.tick,
+    player = event.player_index,
+    action = "blueprint_configured",
+    context = ctx.ephemeral or { action = "blueprint_configured" }
+  }
+  
+  -- Clear ephemeral after blueprint is configured
+  ctx.ephemeral = nil
 end
 
-function construction.handle_deconstructed_area(e)
-  construction.handle_construction_event("on_player_deconstructed_area", e, "deconstruct_area", function(e, rec, player)
-    if e.area then
-      rec.area_x1 = string.format("%.1f", e.area.left_top.x)
-      rec.area_y1 = string.format("%.1f", e.area.left_top.y)
-      rec.area_x2 = string.format("%.1f", e.area.right_bottom.x)
-      rec.area_y2 = string.format("%.1f", e.area.right_bottom.y)
-    end
-    if e.item then
-      rec.item = e.item
-    end
-    if e.alt ~= nil then
-      rec.alt_mode = e.alt
-    end
-  end)
+function construction.handle_deconstructed_area(event)
+  if not shared_utils.is_player_event(event) then
+    return
+  end
+  
+  construction.log_construction_action{
+    tick = event.tick,
+    player = event.player_index,
+    action = "deconstruct_area",
+    context = {
+      action = "deconstruct_area",
+      area = event.area,
+      alt_mode = event.alt
+    }
+  }
+end
+
+function construction.handle_entity_settings_pasted(event)
+  if not shared_utils.is_player_event(event) then
+    return
+  end
+  
+  construction.log_construction_action{
+    tick = event.tick,
+    player = event.player_index,
+    action = "paste_settings",
+    context = {
+      action = "paste_settings",
+      destination = event.destination and event.destination.name,
+      source = event.source and event.source.name,
+      position = event.destination and event.destination.position
+    }
+  }
+end
+
+-- ============================================================================
+-- EVENT REGISTRATION (following logistics pattern)
+-- ============================================================================
+
+function construction.register_events()
+  construction.initialize()
+  
+  -- GUI context tracking (like logistics)
+  script.on_event(defines.events.on_gui_opened, construction.handle_gui_opened)
+  script.on_event(defines.events.on_gui_closed, construction.handle_gui_closed)
+  
+  -- Direct construction events (like logistics direct events)
+  script.on_event(defines.events.on_built_entity, construction.handle_built_entity)
+  script.on_event(defines.events.on_player_mined_entity, construction.handle_mined_entity)
+  script.on_event(defines.events.on_player_rotated_entity, construction.handle_rotated_entity)
+  script.on_event(defines.events.on_player_built_tile, construction.handle_built_tile)
+  script.on_event(defines.events.on_player_placed_equipment, construction.handle_placed_equipment)
+  script.on_event(defines.events.on_player_removed_equipment, construction.handle_removed_equipment)
+  
+  -- Blueprint events
+  script.on_event(defines.events.on_player_setup_blueprint, construction.handle_setup_blueprint)
+  script.on_event(defines.events.on_player_configured_blueprint, construction.handle_configured_blueprint)
+  script.on_event(defines.events.on_player_deconstructed_area, construction.handle_deconstructed_area)
+  script.on_event(defines.events.on_entity_settings_pasted, construction.handle_entity_settings_pasted)
 end
 
 return construction 
