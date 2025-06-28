@@ -36,6 +36,9 @@ function logistics.log_inventory_change(record)
     end
   end
 
+  -- Debug unknown sources/destinations
+  logistics.log_unknown_source_debug(record, record.context and record.context.action or "unknown_context")
+
   local clean_record = shared_utils.clean_record(record)
   local json = game.table_to_json(clean_record)
   shared_utils.buffer_event("logistics", json)
@@ -108,7 +111,9 @@ function logistics.get_player_context(player_index)
     global.player_contexts[player_index] = {
       gui = nil,
       ephemeral = nil,
-      last_player_snapshot = {}
+      last_player_snapshot = {},
+      last_selected_entity = nil,
+      last_craft_start = nil
     }
   end
 
@@ -240,32 +245,90 @@ function logistics.handle_player_inventory_changed(event)
   for item, delta in pairs(player_deltas) do
     local source, destination, context
 
-    if delta > 0 then
-      -- Player gained items
-      source = ctx.gui and ctx.gui.entity.name or "unknown"
-      destination = "player"
-    else
-      -- Player lost items
-      source = "player"
-      destination = ctx.gui and ctx.gui.entity.name or "unknown"
-    end
-
-    -- Use ephemeral context first, then GUI context, then check for crafting
+    -- Determine context FIRST, then set source/destination based on context
     if ctx.ephemeral then
       context = ctx.ephemeral
+      
+      -- Handle different ephemeral context types
+      if ctx.ephemeral.action == "cursor_change" and ctx.ephemeral.target_entity then
+        if delta > 0 then
+          source = ctx.ephemeral.target_entity
+          destination = "player"
+        else
+          source = "player"
+          destination = ctx.ephemeral.target_entity
+        end
+      elseif ctx.ephemeral.action == "build" then
+        source = "player"
+        destination = ctx.ephemeral.entity or "construction"
+      elseif ctx.ephemeral.action == "trash_change" then
+        if delta > 0 then
+          source = "trash"
+          destination = "player"
+        else
+          source = "player"
+          destination = "trash"
+        end
+      elseif ctx.ephemeral.action == "armor_change" then
+        if delta > 0 then
+          source = "armor"
+          destination = "player"
+        else
+          source = "player"
+          destination = "armor"
+        end
+      else
+        -- Default ephemeral handling - still better than unknown
+        if delta > 0 then
+          source = ctx.ephemeral.entity or ctx.ephemeral.action or "unknown"
+          destination = "player"
+        else
+          source = "player"
+          destination = ctx.ephemeral.entity or ctx.ephemeral.action or "unknown"
+        end
+      end
+      
     elseif ctx.gui then
       context = {
         action = "gui_transfer",
         entity = ctx.gui.entity.name,
         position = ctx.gui.entity.position
       }
+      if delta > 0 then
+        source = ctx.gui.entity.name
+        destination = "player"
+      else
+        source = "player"
+        destination = ctx.gui.entity.name
+      end
+      
     elseif delta < 0 and ctx.last_craft_start then
       -- Check if this matches a recent craft start
       context = { action = "craft_start", recipe = ctx.last_craft_start.recipe }
+      source = "player"
+      destination = "crafting"
       -- Clear the craft start context since we've used it
       ctx.last_craft_start = nil
+      
     else
-      context = { action = "unknown" }
+      -- Last resort - unknown cases
+      context = { 
+        action = "unknown",
+        debug_info = {
+          has_gui = ctx.gui ~= nil,
+          has_ephemeral = ctx.ephemeral ~= nil,
+          has_craft_start = ctx.last_craft_start ~= nil,
+          opened_entity = ctx.gui and ctx.gui.entity and ctx.gui.entity.name or "none",
+          cursor_stack = player.cursor_stack and player.cursor_stack.valid_for_read and player.cursor_stack.name or "empty"
+        }
+      }
+      if delta > 0 then
+        source = "unknown"
+        destination = "player"
+      else
+        source = "player"
+        destination = "unknown"
+      end
     end
 
     logistics.log_inventory_change {
@@ -550,8 +613,12 @@ function logistics.handle_built_entity(event)
   ctx.ephemeral = {
     action = "build",
     entity = event.created_entity and event.created_entity.name,
-    position = event.created_entity and event.created_entity.position
+    position = event.created_entity and event.created_entity.position,
+    built_by = event.player_index
   }
+  
+  -- Also immediately update player snapshot since building consumes items
+  logistics.update_player_snapshot(event.player_index)
 end
 
 function logistics.handle_dropped_item(event)
@@ -628,6 +695,329 @@ function logistics.handle_entity_removed(event)
 end
 
 -- ============================================================================
+-- DEBUG LOGGING FOR UNKNOWN SOURCE/DESTINATION
+-- ============================================================================
+
+function logistics.log_unknown_source_debug(record, context_type)
+  -- Log debug info when we have unknown source/destination
+  if record.source == "unknown" or record.destination == "unknown" then
+    local debug_info = {
+      tick = record.tick,
+      player = record.player,
+      item = record.item,
+      delta = record.delta,
+      source = record.source,
+      destination = record.destination,
+      context_type = context_type,
+      action = record.context and record.context.action or "no_action"
+    }
+    
+    -- Log to console for debugging (only in development)
+    if settings and settings.global and settings.global["logistics-debug-mode"] and settings.global["logistics-debug-mode"].value then
+      game.print("DEBUG UNKNOWN: " .. game.table_to_json(debug_info))
+    end
+    
+    -- Buffer as special debug event
+    local debug_json = game.table_to_json(debug_info)
+    shared_utils.buffer_event("logistics_debug", debug_json)
+  end
+end
+
+-- ============================================================================
+-- ADDITIONAL EVENT HANDLERS FOR BETTER CONTEXT TRACKING
+-- ============================================================================
+
+function logistics.handle_cursor_stack_changed(event)
+  if not shared_utils.is_player_event(event) then
+    return
+  end
+
+  local player = game.players[event.player_index]
+  if not (player and player.valid) then
+    return
+  end
+
+  local ctx = logistics.get_player_context(event.player_index)
+  
+  -- Set ephemeral context for cursor changes which might precede main inventory changes
+  -- Try to determine what the cursor is interacting with
+  local cursor_context = { action = "cursor_change" }
+  
+  if player.cursor_stack and player.cursor_stack.valid_for_read then
+    cursor_context.cursor_item = player.cursor_stack.name
+    cursor_context.cursor_count = player.cursor_stack.count
+    
+    -- If player has GUI open, cursor is likely interacting with that entity
+    if ctx.gui and ctx.gui.entity and ctx.gui.entity.valid then
+      cursor_context.target_entity = ctx.gui.entity.name
+      cursor_context.position = ctx.gui.entity.position
+    -- Use last selected entity if available
+    elseif ctx.last_selected_entity and ctx.last_selected_entity.entity and ctx.last_selected_entity.entity.valid then
+      cursor_context.target_entity = ctx.last_selected_entity.entity.name
+      cursor_context.position = ctx.last_selected_entity.entity.position
+    end
+  else
+    -- Empty cursor - might be placing items or picking up
+    cursor_context.cursor_item = "empty"
+    cursor_context.cursor_count = 0
+    
+    -- Still check for target entity for empty cursor operations
+    if ctx.gui and ctx.gui.entity and ctx.gui.entity.valid then
+      cursor_context.target_entity = ctx.gui.entity.name
+      cursor_context.position = ctx.gui.entity.position
+    elseif ctx.last_selected_entity and ctx.last_selected_entity.entity and ctx.last_selected_entity.entity.valid then
+      cursor_context.target_entity = ctx.last_selected_entity.entity.name
+      cursor_context.position = ctx.last_selected_entity.entity.position
+    end
+  end
+  
+  ctx.ephemeral = cursor_context
+end
+
+function logistics.handle_trash_inventory_changed(event)
+  if not shared_utils.is_player_event(event) then
+    return
+  end
+
+  local ctx = logistics.get_player_context(event.player_index)
+  ctx.ephemeral = {
+    action = "trash_change",
+    inventory_type = "trash"
+  }
+  
+  logistics.update_player_snapshot(event.player_index)
+end
+
+function logistics.handle_armor_inventory_changed(event)
+  if not shared_utils.is_player_event(event) then
+    return
+  end
+
+  local ctx = logistics.get_player_context(event.player_index)
+  ctx.ephemeral = {
+    action = "armor_change",
+    inventory_type = "armor"
+  }
+  
+  logistics.update_player_snapshot(event.player_index)
+end
+
+function logistics.handle_ammo_inventory_changed(event)
+  if not shared_utils.is_player_event(event) then
+    return
+  end
+
+  local ctx = logistics.get_player_context(event.player_index)
+  ctx.ephemeral = {
+    action = "ammo_change", 
+    inventory_type = "ammo"
+  }
+  
+  logistics.update_player_snapshot(event.player_index)
+end
+
+function logistics.handle_gun_inventory_changed(event)
+  if not shared_utils.is_player_event(event) then
+    return
+  end
+
+  local ctx = logistics.get_player_context(event.player_index)
+  ctx.ephemeral = {
+    action = "gun_change",
+    inventory_type = "gun"
+  }
+  
+  logistics.update_player_snapshot(event.player_index)
+end
+
+function logistics.handle_equipment_inserted(event)
+  -- Track equipment insertion which might affect player inventory
+  if event.grid and event.grid.entity_owner and event.grid.entity_owner.player then
+    local player = event.grid.entity_owner.player
+    local ctx = logistics.get_player_context(player.index)
+    ctx.ephemeral = {
+      action = "equipment_insert",
+      equipment = event.equipment and event.equipment.name
+    }
+    logistics.update_player_snapshot(player.index)
+  end
+end
+
+function logistics.handle_equipment_removed(event)
+  -- Track equipment removal which might affect player inventory  
+  if event.grid and event.grid.entity_owner and event.grid.entity_owner.player then
+    local player = event.grid.entity_owner.player
+    local ctx = logistics.get_player_context(player.index)
+    ctx.ephemeral = {
+      action = "equipment_remove",
+      equipment = event.equipment and event.equipment.name
+    }
+    logistics.update_player_snapshot(player.index)
+  end
+end
+
+function logistics.handle_capsule_used(event)
+  if not shared_utils.is_player_event(event) then
+    return
+  end
+
+  local ctx = logistics.get_player_context(event.player_index)
+  ctx.ephemeral = {
+    action = "use_capsule",
+    capsule = event.item and event.item.name,
+    position = event.position
+  }
+  
+  logistics.update_player_snapshot(event.player_index)
+end
+
+function logistics.handle_entity_settings_pasted(event)
+  if not shared_utils.is_player_event(event) then
+    return
+  end
+
+  local ctx = logistics.get_player_context(event.player_index)
+  ctx.ephemeral = {
+    action = "settings_paste",
+    source_entity = event.source and event.source.name,
+    destination_entity = event.destination and event.destination.name,
+    position = event.destination and event.destination.position
+  }
+end
+
+function logistics.handle_entity_died(event)
+  -- When entities die, they might drop items that get auto-picked up
+  -- This can cause inventory changes without clear context
+  if event.entity and event.entity.last_user then
+    local ctx = logistics.get_player_context(event.entity.last_user.index)
+    ctx.ephemeral = {
+      action = "entity_death_items",
+      entity = event.entity.name,
+      position = event.entity.position
+    }
+  end
+  
+  -- Also clean up entity snapshots
+  logistics.cleanup_entity_snapshot(event.entity)
+end
+
+function logistics.handle_market_purchase(event)
+  if not shared_utils.is_player_event(event) then
+    return
+  end
+
+  local ctx = logistics.get_player_context(event.player_index)
+  ctx.ephemeral = {
+    action = "market_purchase",
+    entity = "market", 
+    offer_index = event.offer_index,
+    count = event.count,
+    position = event.market and event.market.position
+  }
+  
+  logistics.update_player_snapshot(event.player_index)
+end
+
+function logistics.handle_character_corpse_expired(event)
+  -- Character corpses expiring might affect inventories
+  if event.corpse and event.corpse.character_corpse_player_index then
+    local ctx = logistics.get_player_context(event.corpse.character_corpse_player_index)
+    ctx.ephemeral = {
+      action = "corpse_expired",
+      position = event.corpse.position
+    }
+  end
+end
+
+function logistics.handle_driving_changed_state(event)
+  if not shared_utils.is_player_event(event) then
+    return
+  end
+
+  local ctx = logistics.get_player_context(event.player_index)
+  ctx.ephemeral = {
+    action = event.entity and "enter_vehicle" or "exit_vehicle",
+    entity = event.entity and event.entity.name,
+    position = event.entity and event.entity.position
+  }
+end
+
+function logistics.handle_player_rotated_entity(event)
+  if not shared_utils.is_player_event(event) then
+    return
+  end
+
+  local ctx = logistics.get_player_context(event.player_index)
+  ctx.ephemeral = {
+    action = "rotate_entity",
+    entity = event.entity and event.entity.name,
+    position = event.entity and event.entity.position
+  }
+end
+
+function logistics.handle_player_configured_blueprint(event)
+  if not shared_utils.is_player_event(event) then
+    return
+  end
+
+  local ctx = logistics.get_player_context(event.player_index)
+  ctx.ephemeral = {
+    action = "configure_blueprint",
+    position = event.position
+  }
+end
+
+function logistics.handle_player_setup_blueprint(event)
+  if not shared_utils.is_player_event(event) then
+    return
+  end
+
+  local ctx = logistics.get_player_context(event.player_index)
+  ctx.ephemeral = {
+    action = "setup_blueprint",
+    position = event.position
+  }
+end
+
+function logistics.handle_pre_build(event)
+  if not shared_utils.is_player_event(event) then
+    return
+  end
+
+  local ctx = logistics.get_player_context(event.player_index)
+  ctx.ephemeral = {
+    action = "pre_build",
+    position = event.position
+  }
+end
+
+function logistics.handle_selected_entity_changed(event)
+  if not shared_utils.is_player_event(event) then
+    return
+  end
+
+  -- This can help with cursor interactions
+  local ctx = logistics.get_player_context(event.player_index)
+  if event.last_entity then
+    ctx.last_selected_entity = {
+      entity = event.last_entity,
+      tick = event.tick
+    }
+  end
+end
+
+function logistics.handle_player_set_quick_bar_slot(event)
+  if not shared_utils.is_player_event(event) then
+    return
+  end
+
+  local ctx = logistics.get_player_context(event.player_index)
+  ctx.ephemeral = {
+    action = "quick_bar_change"
+  }
+end
+
+-- ============================================================================
 -- EVENT REGISTRATION
 -- ============================================================================
 
@@ -652,6 +1042,31 @@ function logistics.register_events()
   script.on_event(defines.events.on_player_dropped_item, logistics.handle_dropped_item)
   script.on_event(defines.events.on_picked_up_item, logistics.handle_picked_up_item)
   script.on_event(defines.events.on_rocket_launched, logistics.handle_rocket_launched)
+
+  -- Additional context-providing events
+  script.on_event(defines.events.on_player_cursor_stack_changed, logistics.handle_cursor_stack_changed)
+  script.on_event(defines.events.on_equipment_inserted, logistics.handle_equipment_inserted)
+  script.on_event(defines.events.on_equipment_removed, logistics.handle_equipment_removed)
+  script.on_event(defines.events.on_player_used_capsule, logistics.handle_capsule_used)
+  script.on_event(defines.events.on_entity_settings_pasted, logistics.handle_entity_settings_pasted)
+  script.on_event(defines.events.on_entity_died, logistics.handle_entity_died)
+  script.on_event(defines.events.on_market_item_purchased, logistics.handle_market_purchase)
+  script.on_event(defines.events.on_character_corpse_expired, logistics.handle_character_corpse_expired)
+  script.on_event(defines.events.on_player_driving_changed_state, logistics.handle_driving_changed_state)
+  
+  -- Additional inventory change events
+  script.on_event(defines.events.on_player_trash_inventory_changed, logistics.handle_trash_inventory_changed)
+  script.on_event(defines.events.on_player_armor_inventory_changed, logistics.handle_armor_inventory_changed)
+  script.on_event(defines.events.on_player_ammo_inventory_changed, logistics.handle_ammo_inventory_changed)
+  script.on_event(defines.events.on_player_gun_inventory_changed, logistics.handle_gun_inventory_changed)
+  
+  -- Building and blueprint events
+  script.on_event(defines.events.on_player_rotated_entity, logistics.handle_player_rotated_entity)
+  script.on_event(defines.events.on_player_configured_blueprint, logistics.handle_player_configured_blueprint)
+  script.on_event(defines.events.on_player_setup_blueprint, logistics.handle_player_setup_blueprint)
+  script.on_event(defines.events.on_pre_build, logistics.handle_pre_build)
+  script.on_event(defines.events.on_selected_entity_changed, logistics.handle_selected_entity_changed)
+  script.on_event(defines.events.on_player_set_quick_bar_slot, logistics.handle_player_set_quick_bar_slot)
 
   -- Entity lifecycle events
   script.on_event(defines.events.on_player_mined_entity, logistics.handle_entity_removed)

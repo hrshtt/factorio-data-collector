@@ -132,24 +132,6 @@ function construction.handle_built_entity(event)
   ctx.ephemeral = nil
 end
 
-function construction.handle_mined_entity(event)
-  if not shared_utils.is_player_event(event) then
-    return
-  end
-  
-  construction.log_construction_action{
-    tick = event.tick,
-    player = event.player_index,
-    action = "mine",
-    entity = event.entity and event.entity.name,
-    context = {
-      action = "mine",
-      entity = event.entity and event.entity.name,
-      position = event.entity and event.entity.position
-    }
-  }
-end
-
 function construction.handle_rotated_entity(event)
   if not shared_utils.is_player_event(event) then
     return
@@ -315,7 +297,6 @@ function construction.register_events()
   
   -- Direct construction events (like logistics direct events)
   script.on_event(defines.events.on_built_entity, construction.handle_built_entity)
-  script.on_event(defines.events.on_player_mined_entity, construction.handle_mined_entity)
   script.on_event(defines.events.on_player_rotated_entity, construction.handle_rotated_entity)
   script.on_event(defines.events.on_player_built_tile, construction.handle_built_tile)
   script.on_event(defines.events.on_player_placed_equipment, construction.handle_placed_equipment)

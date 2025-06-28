@@ -1,335 +1,189 @@
-# Factorio Replay Analysis Tool
+# Factorio Gameplay Data Collection
 
-A comprehensive tool for analyzing Factorio replay data by extracting player actions and game events into categorized JSONL logs for detailed behavioral analysis.
+A comprehensive toolkit for collecting and analyzing Factorio gameplay data through multiple approaches including replay analysis, blueprint extraction, and live gameplay monitoring.
 
 ## Overview
 
-This tool provides:
-- **Category-based logging**: Events split into focused categories (movement, logistics, construction, GUI, etc.)
-- **Inventory state-diff tracking**: Deterministic inventory change detection using before/after snapshots
-- **State-driven construction tracking**: Context-aware construction logging following the logistics pattern
-- **Periodic world snapshots**: Complete item counts across all entities every N ticks
-- **Robust analysis tools**: Python scripts for mining replay data and generating process models
-- **Memory-efficient buffering**: Smart buffer management with automatic cleanup
+This repository provides a modular approach to Factorio data collection with different specialized tools:
 
-## New Architecture (v0.3)
+- **`replay-lab/`**: Comprehensive replay analysis tool for extracting player actions and game events
+- **`analysis/`**: Python analysis scripts for process mining and behavioral pattern detection
+- **Additional modules** (planned): Blueprint analysis, live gameplay monitoring, level data extraction
 
-### Modular Logging System
-The logging system has been completely refactored into specialized modules:
+## Key Features
 
-- **`core-meta.jsonl`**: Player join/leave events and replay markers
-- **`movement.jsonl`**: Player position changes and movement patterns
-- **`logistics.jsonl`**: Unified inventory change tracking with diff-based detection and precise item deltas
-- **`construction.jsonl`**: **State-driven** building placement, mining, blueprint operations with context tracking
-- **`gui.jsonl`**: Interface interactions and menu usage
-- **`snapshot.jsonl`**: Periodic complete world state snapshots
-
-### State-Driven Construction Tracking
-The construction system now follows the logistics pattern with:
-- **Context tracking**: GUI state and ephemeral contexts provide rich action metadata
-- **Event-driven logging**: Direct event capture with contextual enhancement
-- **Blueprint session tracking**: Blueprint library/book usage with session duration
-- **Unified logging**: All construction actions flow through `log_construction_action()`
-- **Memory efficient**: No entity polling - only tracks active construction contexts
-
-### Construction (`construction.jsonl`)
-- **State-driven approach** similar to logistics module
-- Entity placement and removal with context
-- Mining operations
-- Blueprint creation and deployment with session tracking
-- Building rotations and configurations
-- Equipment placement/removal
-- Context-aware action logging (build zones, blueprint sessions, etc.)
-
-Example construction event:
-```json
-{
-  "tick": 1234,
-  "player": 1,
-  "action": "build",
-  "entity": "assembling-machine-1",
-  "context": {
-    "action": "build",
-    "entity": "assembling-machine-1",
-    "position": {"x": 12.5, "y": 8.0},
-    "from_blueprint": true,
-    "blueprint_digest": "0eNpdy9EKgz..."
-  }
-}
-```
-
-### Unified Inventory Change Tracking
-The logistics system uses a hybrid approach:
-- **GUI diff listener**: Detects manual transfers through inventory GUIs
-- **Direct event logging**: Captures fast-transfers, crafting, mining immediately
-- **Context tracking**: Prevents double-logging and provides rich action metadata
-- **Single log function**: All inventory changes flow through `log_inventory_change()`
-
-## Prerequisites
-
-- **Factorio** installed on macOS
-- **Python 3.8+** with pandas, pm4py for process mining analysis
-- **Bash** shell (scripts are macOS-specific for now)
+- **Multi-category event logging**: Split events into focused categories (movement, logistics, construction, GUI)
+- **Advanced process mining**: Generate process models and perform conformance checking
+- **Inventory state tracking**: Deterministic inventory change detection with precise deltas
+- **Blueprint analysis**: Session tracking and pattern recognition
+- **Time-series analysis**: Behavioral modeling and trend detection
 
 ## Quick Start
 
-### 1. Prepare Factorio Saves
+### Prerequisites
 
-Download Factorio saves to the `./saves/` directory:
+- **Factorio** installed on macOS
+- **Python 3.8+** with pandas, pm4py for analysis
+- **Bash** shell (scripts are macOS-specific for now)
 
-```
-./saves/
-├── my_save_1/
-│   ├── replay.dat
-│   ├── level.dat
-│   └── ...
-└── my_save_2/
-    ├── replay.dat
-    ├── level.dat
-    └── ...
-```
+### Basic Workflow
 
-### 2. Setup Logging for a Save
+1. **Prepare data source** (currently supports replay files)
+2. **Extract events** using appropriate module
+3. **Analyze patterns** with provided analysis tools
 
-```bash
-./replay-lab/setup-logging-on-save.sh ./saves/your_save_name
-```
+For detailed instructions, see the specific module documentation:
+- [Replay Analysis Guide](./replay-lab/README.md)
 
-This script:
-- Copies all modular logging scripts to your save directory
-- Zips the save with proper structure
-- Copies to Factorio's saves directory (`~/Library/Application Support/factorio/saves/`)
+## Analysis Tools
 
-### 3. Run the Replay in Factorio
-
-1. Open Factorio → **Single Player** → **Load Game**
-2. Select your prepared save (look for the ▶️ play icon)
-3. Click play icon to start replay
-4. **Speed up to 64x** for faster logging
-
-The replay automatically logs to categorized files:
-```
-~/Library/Application Support/factorio/script-output/replay-logs/
-├── core-meta.jsonl
-├── movement.jsonl
-├── logistics.jsonl
-├── construction.jsonl
-├── gui.jsonl
-├── snapshot.jsonl
-└── snapshot-*.json
-```
-
-### 4. Copy Replay Data
+### Process Mining (`analysis/factorio_mining.py`)
+Advanced behavioral analysis with PM4Py:
+- Segments traces into meaningful cases
+- Filters low-frequency variants for cleaner models
+- Discovers Petri nets from player behavior
+- Performs conformance checking against discovered models
 
 ```bash
-# Copy with timestamp-based naming
-./replay-lab/copy-replay.sh
-
-# Or force overwrite
-./replay-lab/copy-replay.sh --force
+python analysis/factorio_mining.py ./factorio_replays/replay-logs/construction.jsonl --outdir results/
 ```
 
-### 5. Analyze the Data
+### Trace Analysis (`analysis/mine_factorio_traces.py`)
+Specialized pattern detection:
+- Category-specific behavioral mining
+- Time-series pattern recognition
+- Player strategy identification
 
-#### Load Categorized Data
+```bash
+python analysis/mine_factorio_traces.py --category movement --outdir movement_analysis/
+```
+
+### Legacy Replay Parser (`analysis/mine_factorio_replay.py`)
+Direct replay.dat file processing:
+- Lightweight event extraction
+- PM4Py integration for existing replay files
+
+## Data Categories
+
+All modules generate events in standardized categories:
+
+### Movement
+- Player position changes and pathfinding
+- Walking patterns and movement efficiency
+- Spatial behavior analysis
+
+### Logistics
+- Inventory transfers and item management
+- Crafting patterns and resource flow
+- Storage optimization strategies
+
+### Construction
+- Building placement and factory layout
+- Blueprint usage and modification patterns
+- Infrastructure development strategies
+
+### GUI Interactions
+- Interface usage patterns
+- Menu navigation behavior
+- Settings and configuration preferences
+
+## Project Structure
+
+```
+factorio-rnd/
+├── saves/                          # Input Factorio save files
+├── factorio_replays/               # Extracted replay data
+│   └── replay-logs/                # Categorized JSONL event files
+├── analysis/                       # Analysis and mining tools
+│   ├── factorio_mining.py         # Advanced process mining
+│   ├── mine_factorio_traces.py    # Trace pattern analysis
+│   ├── mine_factorio_replay.py    # Legacy replay parser
+│   └── analyze_unknown_sources.py # Source identification
+├── replay-lab/                     # Replay analysis module
+│   ├── lua-scripts/               # Factorio logging scripts
+│   ├── setup-logging-on-save.sh  # Replay setup automation
+│   ├── copy-replay.sh            # Data extraction utility
+│   └── README.md                 # Detailed replay guide
+├── runtime-api.json               # Factorio API reference
+├── events_v1.1.110.md            # Event documentation
+└── snapshot-*.json               # World state snapshots
+```
+
+## Data Analysis Examples
+
+### Loading Event Data
 ```python
 import pandas as pd
 
-# Load specific categories
+# Load categorized events
 movement_df = pd.read_json('./factorio_replays/replay-logs/movement.jsonl', lines=True)
 logistics_df = pd.read_json('./factorio_replays/replay-logs/logistics.jsonl', lines=True)
 construction_df = pd.read_json('./factorio_replays/replay-logs/construction.jsonl', lines=True)
 
-# Explore movement patterns
-print("Movement events:", len(movement_df))
-print("Construction events:", len(construction_df))
-print("Logistics events:", len(logistics_df))
+# Basic analysis
+print(f"Movement events: {len(movement_df)}")
+print(f"Construction events: {len(construction_df)}")
+print(f"Logistics events: {len(logistics_df)}")
 ```
 
-#### Process Mining Analysis
-```bash
-# Mine behavioral patterns from replay data
-python analysis/factorio_mining.py ./factorio_replays/replay-logs/construction.jsonl --outdir results/
+### Process Discovery
+```python
+from pm4py import discover_petri_net_inductive
+from pm4py.objects.conversion.log import converter as log_converter
 
-# Mine movement traces
-python analysis/mine_factorio_traces.py --category movement --outdir movement_analysis/
+# Convert to PM4Py event log format
+log = log_converter.apply(construction_df, parameters={
+    log_converter.Variants.TO_EVENT_LOG.value.Parameters.CASE_ID_KEY: 'case_id',
+    log_converter.Variants.TO_EVENT_LOG.value.Parameters.ACTIVITY_KEY: 'action',
+    log_converter.Variants.TO_EVENT_LOG.value.Parameters.TIMESTAMP_KEY: 'tick'
+})
+
+# Discover process model
+net, initial_marking, final_marking = discover_petri_net_inductive(log)
 ```
-
-## Category Details
-
-### Movement (`movement.jsonl`)
-- Player position changes
-- Walking patterns and pathfinding
-- Position context for other events
-
-### Logistics (`logistics.jsonl`)
-- Unified inventory change detection with single `log_inventory_change()` function
-- GUI diff listener for manual transfers (drag, drop, arrow buttons)
-- Direct event logging for fast-transfers, crafting, mining, building
-- One log entry per item type per change (no double-logging)
-- Context tracking prevents missed transfers
-
-Example logistics event:
-```json
-{
-  "tick": 1234,
-  "player": 1,
-  "item": "iron-plate",
-  "delta": -50,
-  "source": "player",
-  "destination": "iron-chest",
-  "context": {
-    "action": "gui_transfer",
-    "entity": "iron-chest",
-    "position": {"x": 12.5, "y": 8.0}
-  }
-}
-```
-
-### Construction (`construction.jsonl`)
-- Entity placement and removal
-- Mining operations
-- Blueprint creation and deployment
-- Building rotations and configurations
-
-### GUI (`gui.jsonl`)
-- Interface interactions
-- Menu opening/closing
-- Inventory panel usage
-- Settings changes
-
-### Snapshots (`snapshot.jsonl` + `snapshot-*.json`)
-Complete world state every N ticks (default: 100,000 ≈ 28 minutes):
-- All player inventories
-- All entity inventories (chests, machines, etc.)
-- Items on ground
-- Fluid storage
-
-## Analysis Tools
-
-### `analysis/factorio_mining.py`
-Advanced process mining with PM4Py:
-- Segments traces into cases
-- Filters low-frequency variants
-- Discovers Petri nets
-- Performs conformance checking
-
-### `analysis/mine_factorio_traces.py`
-Specialized trace analysis:
-- Category-specific mining
-- Behavioral pattern detection
-- Time-series analysis
-
-### `analysis/mine_factorio_replay.py`
-Legacy replay.dat parser:
-- Direct replay file parsing
-- Lightweight event extraction
-- PM4Py integration
-
-## File Structure
-
-```
-factorio-rnd/
-├── saves/                          # Factorio save directories
-├── factorio_replays/               # Extracted replay logs
-│   └── replay-logs/                # Categorized JSONL files
-├── analysis/                       # Python analysis tools
-│   ├── factorio_mining.py         # Advanced process mining
-│   ├── mine_factorio_traces.py    # Trace analysis
-│   └── mine_factorio_replay.py    # Legacy replay parser
-├── replay-lab/
-│   ├── lua-scripts/               # Modular logging system
-│   │   ├── control.lua           # Main controller
-│   │   ├── shared-utils.lua      # Common utilities
-│   │   ├── movement.lua          # Movement tracking
-│   │   ├── logistics.lua         # Inventory & transfers
-│   │   ├── construction.lua      # Building operations
-│   │   ├── gui.lua              # Interface tracking
-│   │   └── snapshot.lua         # World snapshots
-│   ├── setup-logging-on-save.sh  # Setup script
-│   ├── copy-replay.sh            # Data extraction
-│   ├── PRODUCTION_REFACTOR_README.md  # Technical details
-│   └── SNAPSHOT_README.md        # Snapshot system docs
-└── README.md
-```
-
-## Key Improvements in v0.3
-
-### 1. **State-Driven Construction Logging**
-- Context-aware construction tracking following logistics pattern
-- Blueprint session management with duration tracking
-- Ephemeral context for multi-event construction sequences
-- No performance-heavy entity polling
-
-### 2. **Deterministic Inventory Tracking**
-- State-diff layer eliminates guesswork
-- Exact item deltas for all transfers
-- Robust handling of bulk operations
-
-### 3. **Category-Based Organization**
-- Events logically separated by domain
-- Easier analysis of specific behaviors
-- Reduced noise in focused datasets
-
-### 4. **Memory Management**
-- Automatic buffer flushing every 10 seconds
-- Inventory snapshot cleanup
-- Configurable memory limits
 
 ## Configuration
 
-### Snapshot Frequency
-Modify `SNAPSHOT_INTERVAL` in `snapshot.lua`:
-```lua
-local SNAPSHOT_INTERVAL = 100000  -- Every ~28 minutes
+### Python Dependencies
+```bash
+pip install pandas pm4py matplotlib plotly scikit-learn
 ```
 
-### Buffer Settings
-Adjust flush frequency in `control.lua`:
-```lua
-local FLUSH_EVERY = 600  -- Every 10 seconds at 60 UPS
-```
+### Analysis Parameters
+Modify analysis scripts for different focus areas:
+- **Time windows**: Adjust trace segmentation periods
+- **Filtering thresholds**: Set minimum event frequencies
+- **Categories**: Enable/disable specific event types
 
-## Troubleshooting
+## Contributing
 
-### Common Issues
+When adding new data collection modules:
 
-1. **Missing category files**: Check if all lua scripts are copied to save directory
-2. **Large file sizes**: Increase snapshot interval for long replays
-3. **Memory issues**: Reduce buffer size or flush frequency
-4. **Analysis errors**: Ensure pandas/pm4py are installed
-
-### Performance Tips
-
-- **Speed up replays to 64x** for faster logging
-- **Monitor file sizes** - logistics.jsonl can grow large
-- **Use snapshots** for long-term analysis instead of full event logs
+1. **Follow category structure**: Use standardized event categories
+2. **Maintain JSONL format**: Ensure compatibility with analysis tools
+3. **Document thoroughly**: Include setup and usage instructions
+4. **Test integration**: Verify compatibility with existing analysis pipeline
 
 ## Advanced Usage
 
-### Custom Event Filtering
-Modify individual category modules to filter specific events:
+### Custom Analysis Pipelines
+The modular design supports integration with:
+- **Machine learning** frameworks (scikit-learn, TensorFlow)
+- **Visualization** libraries (matplotlib, plotly, seaborn)
+- **Time-series analysis** tools (statsmodels, Prophet)
+- **Network analysis** packages (NetworkX, graph-tool)
 
-```lua
--- In logistics.lua, skip small transfers
-if total_transferred < 10 then
-  return false  -- Skip logging
-end
-```
+### Performance Optimization
+For large datasets:
+- Use **category filtering** to focus analysis
+- Implement **chunked processing** for memory efficiency
+- Leverage **parallel processing** for multi-core systems
 
-### Integration with External Tools
-Category-based logs are designed for:
-- **Process mining** with PM4Py
-- **Time-series analysis** with pandas
-- **Behavioral modeling** with scikit-learn
-- **Visualization** with matplotlib/plotly
+## Future Modules
 
-## Development
+Planned extensions to the data collection toolkit:
+- **Blueprint analyzer**: Static blueprint pattern analysis
+- **Live monitor**: Real-time gameplay event capture
+- **Mod integration**: Custom event logging for modded gameplay
+- **Multiplayer tracker**: Multi-player interaction analysis
 
-The modular architecture makes it easy to:
-- Add new event categories
-- Modify existing loggers
-- Integrate with analysis pipelines
-- Extend snapshot functionality
-
-See `PRODUCTION_REFACTOR_README.md` and `SNAPSHOT_README.md` for technical implementation details.
