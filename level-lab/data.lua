@@ -1,0 +1,2 @@
+-- Placeholder data stage file for Level Dump Lab mod.
+-- No prototypes are defined yet. 

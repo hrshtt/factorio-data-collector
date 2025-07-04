@@ -1,0 +1,2 @@
+-- Placeholder settings stage file for Level Dump Lab mod.
+-- No settings are defined yet. 
