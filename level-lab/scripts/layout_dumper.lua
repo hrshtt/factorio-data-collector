@@ -106,6 +106,9 @@ local function generate_manifest(surface_name, options)
   local meta = options.meta or {}
   meta.game_tick = game.tick
   meta.include_tiles = options.include_tiles or false
+  meta.dump_area = options.dump_area or "unknown"
+  meta.area_size_tiles = options.area_size_tiles
+  meta.chunk_coordinates = options.chunk_coordinates
   
   local manifest = {
     format = "factorio-layout/0.3.0",
@@ -291,6 +294,20 @@ function layout_dumper.dump_area(surface, area, options)
   local manifest = generate_manifest(surface_name, options)
   local output_lines = {serpent.line(manifest)}
   
+  -- Add area boundary information as a comment
+  if options.area_size_tiles then
+    local area_info = {
+      kind = "area_info",
+      message = string.format("Dump area: %s, Size: %dx%d tiles, Coordinates: %s to %s",
+        options.dump_area or "unknown",
+        options.area_size_tiles.width, options.area_size_tiles.height,
+        string.format("(%d,%d)", area[1].x, area[1].y),
+        string.format("(%d,%d)", area[2].x, area[2].y)
+      )
+    }
+    table.insert(output_lines, serpent.line(area_info))
+  end
+  
   -- Get all entities in area
   local entities = surface.find_entities_filtered{area = area}
   
@@ -383,6 +400,12 @@ function layout_dumper.dump_current_chunk(player, options)
   local right_bottom = {x = (chunk.x + 1) * 32, y = (chunk.y + 1) * 32}
   local area = {left_top, right_bottom}
   
+  -- Add metadata about the dump area
+  options = options or {}
+  options.dump_area = "single_chunk"
+  options.area_size_tiles = {width = 32, height = 32}
+  options.chunk_coordinates = {x = chunk.x, y = chunk.y}
+  
   local output = layout_dumper.dump_area(surface, area, options)
   
   -- Write to file
@@ -398,7 +421,7 @@ function layout_dumper.dump_current_chunk(player, options)
     end
   end
   
-  local message = {"", "[layout-dump] Exported ", entity_count, " entities from chunk (", chunk.x, ",", chunk.y, ") to ", filename}
+  local message = {"", "[layout-dump] Single Chunk (32×32): Exported ", entity_count, " entities from chunk (", chunk.x, ",", chunk.y, ") to ", filename}
   if options.include_tiles then
     local tiles = surface.find_tiles_filtered{area = area}
     table.insert(message, " (+ ")
@@ -427,6 +450,18 @@ function layout_dumper.dump_area_around_player(player, radius_chunks, options)
   }
   local area = {left_top, right_bottom}
   
+  -- Add metadata about the dump area
+  options = options or {}
+  local chunks_per_side = (radius_chunks * 2 + 1)
+  local tiles_per_side = chunks_per_side * 32
+  options.dump_area = string.format("area_%dx%d_chunks", chunks_per_side, chunks_per_side)
+  options.area_size_tiles = {width = tiles_per_side, height = tiles_per_side}
+  options.chunk_coordinates = {
+    center = {x = center_chunk.x, y = center_chunk.y},
+    top_left = {x = center_chunk.x - radius_chunks, y = center_chunk.y - radius_chunks},
+    bottom_right = {x = center_chunk.x + radius_chunks, y = center_chunk.y + radius_chunks}
+  }
+  
   local output = layout_dumper.dump_area(surface, area, options)
   
   -- Write to file
@@ -443,8 +478,10 @@ function layout_dumper.dump_area_around_player(player, radius_chunks, options)
     end
   end
   
-  local message = {"", "[layout-dump] Exported ", entity_count, " entities from ", 
-                (radius_chunks * 2 + 1), "x", (radius_chunks * 2 + 1), " chunk area to ", filename}
+  local chunks_per_side = (radius_chunks * 2 + 1)
+  local tiles_per_side = chunks_per_side * 32
+  local message = {"", "[layout-dump] Multi-Chunk Area (", tiles_per_side, "×", tiles_per_side, "): Exported ", entity_count, " entities from ", 
+                chunks_per_side, "×", chunks_per_side, " chunk area centered on (", center_chunk.x, ",", center_chunk.y, ") to ", filename}
   if options.include_tiles then
     local tiles = surface.find_tiles_filtered{area = area}
     table.insert(message, " (+ ")
