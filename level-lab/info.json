@@ -1,8 +1,9 @@
 {
   "name": "level-dump",
   "version": "0.0.1",
-  "title": "Level Dump Lab",
+  "title": "Factorio Layout Dump 0.3.0",
   "author": "Your Name",
   "factorio_version": "2.0",
-  "description": "A minimal mod skeleton for dumping save/level information."
+  "description": "Comprehensive factory layout dumper implementing the Factorio Layout Dump 0.3.0 specification. Exports loss-less NDJSON format suitable for analysis, ML training, and factory reconstruction.",
+  "allow_write_to_script_output": true
 } 
