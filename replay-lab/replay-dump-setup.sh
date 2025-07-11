@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Script to copy all .lua files from replay-lab/scripts to target directory and zip it and copy to Factorio saves
-# Usage: ./setup-logging-on-save.sh <target_directory>
+# Usage: ./replay-dump-setup.sh <target_directory>
 
 set -e  # Exit on any error
 

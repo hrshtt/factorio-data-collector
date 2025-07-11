@@ -403,28 +403,64 @@ function logistics.handle_fast_transferred(event)
     return -- Nothing transferable
   end
 
-  -- Get snapshots *before* the transfer (taken in previous tick)
+  -- Get current state (after transfer)
+  local curr_player = logistics.get_inventory_contents(player, defines.inventory.character_main)
+  local curr_entity = logistics.get_inventory_contents(entity, inventory_index)
+  
+  -- Get the stored snapshots
   local ctx = logistics.get_player_context(event.player_index)
   local prev_player = ctx.last_player_snapshot
   local prev_entity = logistics.get_entity_snapshot(entity, inventory_index)
 
-  -- Current state (after the transfer)
-  local curr_player = logistics.get_inventory_contents(player, defines.inventory.character_main)
-  local curr_entity = logistics.get_inventory_contents(entity, inventory_index)
-
-  -- Diffs
+  -- Calculate diffs
   local player_deltas = logistics.diff_tables(prev_player, curr_player)
+  local entity_deltas = logistics.diff_tables(prev_entity, curr_entity)
 
-  -- Log changes based on player inventory deltas
-  for item, delta in pairs(player_deltas) do
+  -- DEBUG: Log what we're seeing (temporary)
+  local function table_size(t)
+    local count = 0
+    for _ in pairs(t or {}) do
+      count = count + 1
+    end
+    return count
+  end
+  
+  local debug_info = {
+    tick = event.tick,
+    entity = entity.name,
+    player_deltas = player_deltas,
+    entity_deltas = entity_deltas,
+    prev_player_count = prev_player and table_size(prev_player) or 0,
+    prev_entity_count = prev_entity and table_size(prev_entity) or 0,
+    curr_player_count = table_size(curr_player),
+    curr_entity_count = table_size(curr_entity)
+  }
+  shared_utils.buffer_event("fast_transfer_debug", game.table_to_json(debug_info))
+
+  -- Use entity deltas if they exist, otherwise fall back to player deltas
+  local transfers_to_log = {}
+  
+  if next(entity_deltas) then
+    -- Entity inventory changed - use these deltas
+    transfers_to_log = entity_deltas
+  elseif next(player_deltas) then
+    -- No entity change but player changed - use player deltas (flipped)
+    for item, delta in pairs(player_deltas) do
+      transfers_to_log[item] = -delta -- Flip because we want entity perspective
+    end
+  end
+
+  -- Log the transfers
+  for item, delta in pairs(transfers_to_log) do
     if delta ~= 0 then
       local source, destination
-      if delta > 0 then
-        -- Player gained items, so entity lost them
+      if delta < 0 then
+        -- Entity lost items, so player gained them
         source = entity.name
         destination = "player"
+        delta = math.abs(delta)
       else
-        -- Player lost items, so entity gained them
+        -- Entity gained items, so player lost them
         source = "player"
         destination = entity.name
       end
@@ -433,7 +469,7 @@ function logistics.handle_fast_transferred(event)
         tick = event.tick,
         player = event.player_index,
         item = item,
-        delta = math.abs(delta), -- Use positive magnitude
+        delta = delta,
         source = source,
         destination = destination,
         context = {
@@ -446,7 +482,7 @@ function logistics.handle_fast_transferred(event)
     end
   end
 
-  -- Update snapshots so future diffs are correct
+  -- Update snapshots
   logistics.update_player_snapshot(event.player_index)
   logistics.update_entity_snapshot(entity, inventory_index)
 end
@@ -1028,8 +1064,8 @@ function logistics.register_events()
   script.on_event(defines.events.on_gui_opened, logistics.handle_gui_opened)
   script.on_event(defines.events.on_gui_closed, logistics.handle_gui_closed)
 
-  -- Core diff listener for GUI transfers
-  script.on_event(defines.events.on_player_main_inventory_changed, logistics.handle_player_inventory_changed)
+  -- -- Core diff listener for GUI transfers
+  -- script.on_event(defines.events.on_player_main_inventory_changed, logistics.handle_player_inventory_changed)
 
   -- Direct "builder" events
   script.on_event(defines.events.on_player_fast_transferred, logistics.handle_fast_transferred)

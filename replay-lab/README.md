@@ -59,7 +59,7 @@ Download or copy Factorio saves to the `../saves/` directory:
 ### 2. Setup Logging for a Save
 
 ```bash
-./setup-logging-on-save.sh ../saves/your_save_name
+./replay-dump-setup.sh ../saves/your_save_name
 ```
 
 This script:
@@ -90,10 +90,10 @@ The replay automatically logs to categorized files:
 
 ```bash
 # Copy with timestamp-based naming
-./copy-replay.sh
+./replay-dump-setup.sh
 
 # Or force overwrite
-./copy-replay.sh --force
+./replay-dump-setup.sh --force
 ```
 
 This copies the logged data to `../factorio_replays/replay-logs/` for analysis.
@@ -191,8 +191,8 @@ replay-lab/
 │   ├── gui.lua                    # Interface interaction tracking
 │   ├── snapshot.lua               # World state snapshots
 │   └── tick_overlay.lua           # Debug overlay (optional)
-├── setup-logging-on-save.sh       # Automated save setup
-├── copy-replay.sh                 # Data extraction utility
+├── replay-dump-setup.sh       # Automated save setup
+├── replay-dump-setup.sh                 # Data extraction utility
 └── README.md                      # This documentation
 ```
 
@@ -269,7 +269,7 @@ local MAX_CONSTRUCTION_CONTEXTS = 500
 
 4. **Incomplete logging**: Verify save directory structure
    ```bash
-   ./setup-logging-on-save.sh ../saves/your_save_name --verbose
+   ./replay-dump-setup.sh ../saves/your_save_name --verbose
    ```
 
 ### Debug Options
