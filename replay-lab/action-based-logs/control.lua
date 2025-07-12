@@ -17,6 +17,7 @@ local tick_overlay = require("script.tick_overlay")
 local craft_item = require("script.actions.craft_item")
 local extract_item = require("script.actions.extract_item")
 local harvest_resource = require("script.actions.harvest_resource")
+local harvest_resource_collated = require("script.actions.harvest_resource_collated")
 local insert_item = require("script.actions.insert_item")
 local launch_rocket = require("script.actions.launch_rocket")
 local move_to = require("script.actions.move_to")
@@ -127,6 +128,7 @@ function main.initialize()
   craft_item.register_events()
   extract_item.register_events()
   harvest_resource.register_events()
+  harvest_resource_collated.register_events()
   insert_item.register_events()
   launch_rocket.register_events()
   move_to.register_events()
@@ -159,6 +161,7 @@ script.on_init(function()
   shared_utils.initialize_category_buffer("craft_item")
   shared_utils.initialize_category_buffer("extract_item")
   shared_utils.initialize_category_buffer("harvest_resource")
+  shared_utils.initialize_category_buffer("harvest_resource_collated")
   shared_utils.initialize_category_buffer("insert_item")
   shared_utils.initialize_category_buffer("launch_rocket")
   shared_utils.initialize_category_buffer("move_to")
@@ -188,6 +191,7 @@ script.on_load(function()
   shared_utils.initialize_category_buffer("craft_item")
   shared_utils.initialize_category_buffer("extract_item")
   shared_utils.initialize_category_buffer("harvest_resource")
+  shared_utils.initialize_category_buffer("harvest_resource_collated")
   shared_utils.initialize_category_buffer("insert_item")
   shared_utils.initialize_category_buffer("launch_rocket")
   shared_utils.initialize_category_buffer("move_to")
@@ -213,9 +217,9 @@ script.on_nth_tick(FLUSH_EVERY, function()
 end)
 
 -- ============================================================================
--- REPLAY MARKERS
+-- REPLAY MARKERS & COLLATION PROCESSING
 -- ============================================================================
--- First-tick detection (headless or local view)
+-- First-tick detection (headless or local view) + collated event processing
 script.on_event(defines.events.on_tick, function(event)
   -- First tick detection for replay start
   if event.tick == 1 then
@@ -228,6 +232,9 @@ script.on_event(defines.events.on_tick, function(event)
     local line = game.table_to_json(rec)
     shared_utils.buffer_event("core-meta", line)
   end
+  
+  -- Process collated harvest resource events
+  harvest_resource_collated.process_partial_mining(event)
 end)
 
 -- Replay end detection when player leaves
@@ -248,7 +255,7 @@ end)
 main.initialize()
 
 -- ============================================================================
--- LEGACY MODULES (UNCHANGED)
+-- LEGACY MODULES (NEVER REMOVE)
 -- ============================================================================
 local handler = require("event_handler")
 handler.add_lib(require("freeplay"))
