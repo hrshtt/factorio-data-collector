@@ -7,10 +7,10 @@
 local extract_item = {}
 local shared_utils = require("script.shared-utils")
 
-function extract_item.register_events()
-  script.on_event(defines.events.on_player_fast_transferred, function(e)
+function extract_item.register_events(event_dispatcher)
+  event_dispatcher.register_handler(defines.events.on_player_fast_transferred, function(e)
     if not shared_utils.is_player_event(e) then return end
-    if e.from_player then return end
+    if e.from_player then return end -- Only handle extractions (from entity to player)
     local player = game.players[e.player_index]
     local rec = shared_utils.create_base_record("on_player_fast_transferred", e)
     rec.action = "extract_item"

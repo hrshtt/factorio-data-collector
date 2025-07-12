@@ -38,10 +38,10 @@ end
 -- ============================================================================
 -- EVENT REGISTRATION
 -- ============================================================================
-function tick_overlay.register_events()
-  -- Register tick overlay every SHOW_EVERY ticks
-  script.on_nth_tick(SHOW_EVERY, function(e)
-    tick_overlay.show_tick(e)
+function tick_overlay.register_events(event_dispatcher)
+  -- Register periodic tick update (every 60 ticks = 1 second)
+  event_dispatcher.register_nth_tick_handler(SHOW_EVERY, function(event)
+    tick_overlay.show_tick(event)
   end)
 end
 

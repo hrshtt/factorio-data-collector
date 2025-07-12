@@ -165,18 +165,14 @@ local function cleanup_stale_segments()
 end
 
 -- Register event handlers
-function move_to_collated.register_events()
-  -- Initialize the event buffer
-  shared_utils.initialize_category_buffer("move_to_collated")
+function move_to_collated.register_events(event_dispatcher)
+  event_dispatcher.register_handler(defines.events.on_player_changed_position, on_player_changed_position)
   
-  -- Register main movement tracking event
-  script.on_event(defines.events.on_player_changed_position, on_player_changed_position)
-  
-  -- Register cleanup events
-  script.on_event(defines.events.on_player_left_game, on_player_left_game)
+  -- Player lifecycle events
+  event_dispatcher.register_handler(defines.events.on_player_left_game, on_player_left_game)
   
   -- Register periodic cleanup (every 10 seconds)
-  script.on_nth_tick(600, cleanup_stale_segments)
+  event_dispatcher.register_nth_tick_handler(600, cleanup_stale_segments)
 end
 
 -- Initialize storage on script initialization

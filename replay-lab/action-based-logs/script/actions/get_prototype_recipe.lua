@@ -5,9 +5,10 @@
 --@date 2025-01-27
 
 local get_prototype_recipe = {}
+local shared_utils = require("script.shared-utils")
 
-function get_prototype_recipe.register_events()
-  -- TODO: Implement get prototype recipe event registration
+function get_prototype_recipe.register_events(event_dispatcher)
+  -- This module doesn't register any events - it's called by other modules
 end
 
 return get_prototype_recipe 

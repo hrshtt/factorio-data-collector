@@ -410,29 +410,28 @@ end
 -- ============================================================================
 -- PUBLIC INTERFACE
 -- ============================================================================
-function insert_item_collated.register_events()
-  -- Exclusion tracking events (to filter out inventory changes)
-  script.on_event(defines.events.on_player_crafted_item, on_player_crafted_item)
-  script.on_event(defines.events.on_built_entity, on_built_entity)
-  script.on_event(defines.events.on_robot_built_entity, on_robot_built_entity)
-  script.on_event(defines.events.on_player_mined_entity, on_player_mined_entity)
-  script.on_event(defines.events.on_player_mined_item, on_player_mined_item)
+function insert_item_collated.register_events(event_dispatcher)
+  event_dispatcher.register_handler(defines.events.on_player_crafted_item, on_player_crafted_item)
+  event_dispatcher.register_handler(defines.events.on_built_entity, on_built_entity)
+  event_dispatcher.register_handler(defines.events.on_robot_built_entity, on_robot_built_entity)
+  event_dispatcher.register_handler(defines.events.on_player_mined_entity, on_player_mined_entity)
+  event_dispatcher.register_handler(defines.events.on_player_mined_item, on_player_mined_item)
   
-  -- Core transfer events (always logged)
-  script.on_event(defines.events.on_player_fast_transferred, on_fast_transferred)
-  script.on_event(defines.events.on_player_dropped_item, on_dropped_item)
+  -- Fast transfer and inventory events
+  event_dispatcher.register_handler(defines.events.on_player_fast_transferred, on_fast_transferred)
+  event_dispatcher.register_handler(defines.events.on_player_dropped_item, on_dropped_item)
   
-  -- Filtered inventory change event
-  script.on_event(defines.events.on_player_main_inventory_changed, on_main_inventory_changed)
+  -- Inventory tracking
+  event_dispatcher.register_handler(defines.events.on_player_main_inventory_changed, on_main_inventory_changed)
   
-  -- Context tracking events
-  script.on_event(defines.events.on_selected_entity_changed, on_selected_entity_changed)
-  script.on_event(defines.events.on_player_cursor_stack_changed, on_cursor_stack_changed)
-  script.on_event(defines.events.on_gui_opened, on_gui_opened)
-  script.on_event(defines.events.on_gui_closed, on_gui_closed)
+  -- Context tracking
+  event_dispatcher.register_handler(defines.events.on_selected_entity_changed, on_selected_entity_changed)
+  event_dispatcher.register_handler(defines.events.on_player_cursor_stack_changed, on_cursor_stack_changed)
+  event_dispatcher.register_handler(defines.events.on_gui_opened, on_gui_opened)
+  event_dispatcher.register_handler(defines.events.on_gui_closed, on_gui_closed)
   
   -- Player lifecycle
-  script.on_event(defines.events.on_player_joined_game, on_player_joined)
+  event_dispatcher.register_handler(defines.events.on_player_joined_game, on_player_joined)
 end
 
 function insert_item_collated.on_init()

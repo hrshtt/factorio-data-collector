@@ -7,8 +7,8 @@
 local craft_item = {}
 local shared_utils = require("script.shared-utils")
 
-function craft_item.register_events()
-  script.on_event(defines.events.on_player_crafted_item, function(e)
+function craft_item.register_events(event_dispatcher)
+  event_dispatcher.register_handler(defines.events.on_player_crafted_item, function(e)
     if not shared_utils.is_player_event(e) then return end
     local player = game.players[e.player_index]
     local rec = shared_utils.create_base_record("on_player_crafted_item", e)

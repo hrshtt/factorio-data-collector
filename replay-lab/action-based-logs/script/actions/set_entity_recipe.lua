@@ -5,9 +5,10 @@
 --@date 2025-01-27
 
 local set_entity_recipe = {}
+local shared_utils = require("script.shared-utils")
 
-function set_entity_recipe.register_events()
-  -- TODO: Implement set entity recipe event registration
+function set_entity_recipe.register_events(event_dispatcher)
+  -- This module doesn't register any events - it's called by other modules
 end
 
 return set_entity_recipe 

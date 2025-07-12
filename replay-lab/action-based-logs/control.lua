@@ -49,39 +49,56 @@ local move_to_collated = require("script.actions.move_to_collated")
 local FLUSH_EVERY = 600        -- 10 s at 60 UPS
 
 -- ============================================================================
--- CORE-META LOGGING (handled in control.lua)
+-- CENTRALIZED EVENT DISPATCHER
 -- ============================================================================
-local core_meta = {}
+local event_dispatcher = {}
 
-function core_meta.log_event(event_name, event_data)
-  local player = event_data.player_index and game.players[event_data.player_index]
-  
-  -- Create base record
-  local rec = shared_utils.create_base_record(event_name, event_data)
-  
-  -- Apply event-specific context extraction
-  local extractor = core_meta.get_extractor(event_name)
-  local should_log = extractor(event_data, rec, player)
-  
-  -- Check if event should be skipped
-  if should_log == false then
-    return
+-- Table to store multiple handlers per event
+local event_handlers = {}
+
+function event_dispatcher.register_handler(event_id, handler_func)
+  if not event_handlers[event_id] then
+    event_handlers[event_id] = {}
+    -- Register the dispatcher for this event only once
+    script.on_event(event_id, function(event)
+      -- Call all registered handlers for this event
+      for _, handler in pairs(event_handlers[event_id]) do
+        handler(event)
+      end
+    end)
   end
-  
-  -- Add player context if missing
-  shared_utils.add_player_context_if_missing(rec, player)
-  
-  -- Clean up nil values and buffer the event
-  local clean_rec = shared_utils.clean_record(rec)
-  local line = game.table_to_json(clean_rec)
-  
-  -- Buffer to core-meta category
-  shared_utils.buffer_event("core-meta", line)
+  table.insert(event_handlers[event_id], handler_func)
+end
+
+function event_dispatcher.register_nth_tick_handler(tick_interval, handler_func)
+  -- For nth tick events, we'll use a similar pattern
+  if not event_handlers["nth_tick_" .. tick_interval] then
+    event_handlers["nth_tick_" .. tick_interval] = {}
+    script.on_nth_tick(tick_interval, function(event)
+      for _, handler in pairs(event_handlers["nth_tick_" .. tick_interval]) do
+        handler(event)
+      end
+    end)
+  end
+  table.insert(event_handlers["nth_tick_" .. tick_interval], handler_func)
 end
 
 -- ============================================================================
--- CORE-META CONTEXT EXTRACTORS
+-- CORE-META EVENT HANDLERS
 -- ============================================================================
+local core_meta = {}
+
+function core_meta.log_event(event_name, e)
+  local player = game.players[e.player_index]
+  local rec = shared_utils.create_base_record(event_name, e)
+  local extractor = core_meta.get_extractor(event_name)
+  extractor(e, rec, player)
+  shared_utils.add_player_context_if_missing(rec, player)
+  local clean_rec = shared_utils.clean_record(rec)
+  local line = game.table_to_json(clean_rec)
+  shared_utils.buffer_event("core-meta", line)
+end
+
 function core_meta.on_player_joined_game(e, rec, player)
   rec.action = "join_game"
 end
@@ -100,62 +117,56 @@ function core_meta.get_extractor(event_name)
 end
 
 -- ============================================================================
--- CORE-META EVENT REGISTRATION
--- ============================================================================
-function core_meta.register_events()
-  -- Register core-meta events
-  script.on_event(defines.events.on_player_joined_game, function(e)
-    core_meta.log_event("on_player_joined_game", e)
-  end)
-  
-  script.on_event(defines.events.on_player_left_game, function(e)
-    core_meta.log_event("on_player_left_game", e)
-  end)
-  
-  script.on_event(defines.events.on_pre_player_left_game, function(e)
-    core_meta.log_event("on_pre_player_left_game", e)
-  end)
-end
-
--- ============================================================================
 -- MAIN MODULE - EVENT REGISTRATION
 -- ============================================================================
 local main = {}
 
 function main.initialize()
-  -- Register events for each action module
-  core_meta.register_events()
-  tick_overlay.register_events()
+  -- Register core-meta events using dispatcher
+  event_dispatcher.register_handler(defines.events.on_player_joined_game, function(e)
+    core_meta.log_event("on_player_joined_game", e)
+  end)
   
-  -- Core actions
-  craft_item.register_events()
-  craft_item_collated.register_events()
-  extract_item.register_events()
-  harvest_resource.register_events()
-  harvest_resource_collated.register_events()
-  insert_item.register_events()
-  insert_item_collated.register_events()
-  launch_rocket.register_events()
-  move_to.register_events()
-  move_to_collated.register_events()
-  pickup_entity.register_events()
-  place_entity.register_events()
-  rotate_entity.register_events()
-  send_message.register_events()
-  set_entity_recipe.register_events()
-  set_research.register_events()
+  event_dispatcher.register_handler(defines.events.on_player_left_game, function(e)
+    core_meta.log_event("on_player_left_game", e)
+  end)
+  
+  event_dispatcher.register_handler(defines.events.on_pre_player_left_game, function(e)
+    core_meta.log_event("on_pre_player_left_game", e)
+  end)
+  
+  -- Register tick overlay events
+  tick_overlay.register_events(event_dispatcher)
+  
+  -- Register action module handlers
+  craft_item.register_events(event_dispatcher)
+  craft_item_collated.register_events(event_dispatcher)
+  extract_item.register_events(event_dispatcher)
+  harvest_resource.register_events(event_dispatcher)
+  harvest_resource_collated.register_events(event_dispatcher)
+  insert_item.register_events(event_dispatcher)
+  insert_item_collated.register_events(event_dispatcher)
+  launch_rocket.register_events(event_dispatcher)
+  move_to.register_events(event_dispatcher)
+  move_to_collated.register_events(event_dispatcher)
+  pickup_entity.register_events(event_dispatcher)
+  place_entity.register_events(event_dispatcher)
+  rotate_entity.register_events(event_dispatcher)
+  send_message.register_events(event_dispatcher)
+  set_entity_recipe.register_events(event_dispatcher)
+  set_research.register_events(event_dispatcher)
   
   -- Observation actions
-  get_entities.register_events()
-  get_research_progress.register_events()
-  inspect_inventory.register_events()
-  score.register_events()
-  get_resource_patch.register_events()
+  get_entities.register_events(event_dispatcher)
+  get_research_progress.register_events(event_dispatcher)
+  inspect_inventory.register_events(event_dispatcher)
+  score.register_events(event_dispatcher)
+  get_resource_patch.register_events(event_dispatcher)
   
   -- Optional observation actions
-  get_entity.register_events()
-  print_action.register_events()
-  get_prototype_recipe.register_events()
+  get_entity.register_events(event_dispatcher)
+  print_action.register_events(event_dispatcher)
+  get_prototype_recipe.register_events(event_dispatcher)
 end
 
 -- ============================================================================
@@ -233,48 +244,54 @@ script.on_load(function()
   move_to_collated.on_load()
 end)
 
--- Periodic flush every FLUSH_EVERY ticks
-script.on_nth_tick(FLUSH_EVERY, function()
-  shared_utils.flush_all_buffers()
-end)
+
 
 -- ============================================================================
 -- REPLAY MARKERS & COLLATION PROCESSING
 -- ============================================================================
--- First-tick detection (headless or local view) + collated event processing
-script.on_event(defines.events.on_tick, function(event)
-  -- First tick detection for replay start
-  if event.tick == 1 then
-    log('[REPLAY-START] First tick detected, replay begins')
-    -- Log replay start marker
+-- Register additional system handlers after module initialization
+function main.register_system_handlers()
+  -- First-tick detection (headless or local view) + collated event processing
+  event_dispatcher.register_handler(defines.events.on_tick, function(event)
+    -- First tick detection for replay start
+    if event.tick == 1 then
+      log('[REPLAY-START] First tick detected, replay begins')
+      -- Log replay start marker
+      local rec = {
+        t = event.tick,
+        msg = "REPLAY-START"
+      }
+      local line = game.table_to_json(rec)
+      shared_utils.buffer_event("core-meta", line)
+    end
+    
+    -- Process collated harvest resource events
+    harvest_resource_collated.process_partial_mining(event)
+  end)
+
+  -- Replay end detection when player leaves
+  event_dispatcher.register_handler(defines.events.on_pre_player_left_game, function(event)
+    log('[REPLAY-END] Player leaving game, replay ends at tick ' .. event.tick)
+    -- Log replay end marker
     local rec = {
       t = event.tick,
-      msg = "REPLAY-START"
+      msg = "REPLAY-END"
     }
     local line = game.table_to_json(rec)
     shared_utils.buffer_event("core-meta", line)
-  end
+    -- Flush all buffers
+    shared_utils.flush_all_buffers()
+  end)
   
-  -- Process collated harvest resource events
-  harvest_resource_collated.process_partial_mining(event)
-end)
-
--- Replay end detection when player leaves
-script.on_event(defines.events.on_pre_player_left_game, function(event)
-  log('[REPLAY-END] Player leaving game, replay ends at tick ' .. event.tick)
-  -- Log replay end marker
-  local rec = {
-    t = event.tick,
-    msg = "REPLAY-END"
-  }
-  local line = game.table_to_json(rec)
-  shared_utils.buffer_event("core-meta", line)
-  -- Flush all buffers
-  shared_utils.flush_all_buffers()
-end)
+  -- Periodic flush using dispatcher
+  event_dispatcher.register_nth_tick_handler(FLUSH_EVERY, function()
+    shared_utils.flush_all_buffers()
+  end)
+end
 
 -- Initialize the action-based logger
 main.initialize()
+main.register_system_handlers()
 
 -- ============================================================================
 -- LEGACY MODULES (NEVER REMOVE)

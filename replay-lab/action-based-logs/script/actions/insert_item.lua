@@ -298,20 +298,20 @@ end
 -- ============================================================================
 -- PUBLIC INTERFACE
 -- ============================================================================
-function insert_item.register_events()
+function insert_item.register_events(event_dispatcher)
   -- Core transfer events
-  script.on_event(defines.events.on_player_fast_transferred, on_fast_transferred)
-  script.on_event(defines.events.on_player_dropped_item, on_dropped_item)
-  script.on_event(defines.events.on_player_main_inventory_changed, on_main_inventory_changed)
+  event_dispatcher.register_handler(defines.events.on_player_fast_transferred, on_fast_transferred)
+  event_dispatcher.register_handler(defines.events.on_player_dropped_item, on_dropped_item)
+  event_dispatcher.register_handler(defines.events.on_player_main_inventory_changed, on_main_inventory_changed)
   
   -- Context tracking events
-  script.on_event(defines.events.on_selected_entity_changed, on_selected_entity_changed)
-  script.on_event(defines.events.on_player_cursor_stack_changed, on_cursor_stack_changed)
-  script.on_event(defines.events.on_gui_opened, on_gui_opened)
-  script.on_event(defines.events.on_gui_closed, on_gui_closed)
+  event_dispatcher.register_handler(defines.events.on_selected_entity_changed, on_selected_entity_changed)
+  event_dispatcher.register_handler(defines.events.on_player_cursor_stack_changed, on_cursor_stack_changed)
+  event_dispatcher.register_handler(defines.events.on_gui_opened, on_gui_opened)
+  event_dispatcher.register_handler(defines.events.on_gui_closed, on_gui_closed)
   
   -- Player lifecycle
-  script.on_event(defines.events.on_player_joined_game, on_player_joined)
+  event_dispatcher.register_handler(defines.events.on_player_joined_game, on_player_joined)
 end
 
 return insert_item 

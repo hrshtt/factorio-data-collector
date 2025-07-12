@@ -7,8 +7,8 @@
 local rotate_entity = {}
 local shared_utils = require("script.shared-utils")
 
-function rotate_entity.register_events()
-  script.on_event(defines.events.on_player_rotated_entity, function(e)
+function rotate_entity.register_events(event_dispatcher)
+  event_dispatcher.register_handler(defines.events.on_player_rotated_entity, function(e)
     if not shared_utils.is_player_event(e) then return end
     local player = game.players[e.player_index]
     local rec = shared_utils.create_base_record("on_player_rotated_entity", e)

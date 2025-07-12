@@ -49,14 +49,8 @@ end
 --------------------------------------------------------------------
 -- EVENT REGISTRATION
 --------------------------------------------------------------------
-function harvest_module.register_events()
-  -- ensure the buffer exists
-  util.initialize_category_buffer("harvest_resource_collated")
-
-  ----------------------------------------------------------------
-  -- (1) action starts  ──────────────────────────────────────────
-  ----------------------------------------------------------------
-  script.on_event(defines.events.on_pre_player_mined_item, function(event)
+function harvest_module.register_events(event_dispatcher)
+  event_dispatcher.register_handler(defines.events.on_pre_player_mined_item, function(event)
     if not util.is_player_event(event) then return end
     
     ensure_partial_mine()
@@ -83,7 +77,7 @@ function harvest_module.register_events()
   ----------------------------------------------------------------
   -- (2) one or more item-drops for the same tick/player
   ----------------------------------------------------------------
-  script.on_event(defines.events.on_player_mined_item, function(event)
+  event_dispatcher.register_handler(defines.events.on_player_mined_item, function(event)
     if not util.is_player_event(event) then return end
     
     ensure_partial_mine()
@@ -100,7 +94,7 @@ function harvest_module.register_events()
   ----------------------------------------------------------------
   -- (3) Entity destruction confirmation
   ----------------------------------------------------------------
-  script.on_event(defines.events.on_player_mined_entity, function(event)
+  event_dispatcher.register_handler(defines.events.on_player_mined_entity, function(event)
     if not util.is_player_event(event) then return end
     
     ensure_partial_mine()
@@ -115,7 +109,7 @@ function harvest_module.register_events()
   ----------------------------------------------------------------
   -- (4) Handle tile mining separately (different pattern)
   ----------------------------------------------------------------
-  script.on_event(defines.events.on_player_mined_tile, function(event)
+  event_dispatcher.register_handler(defines.events.on_player_mined_tile, function(event)
     if not util.is_player_event(event) then return end
     
     -- Tiles don't follow the same pre/post pattern, log immediately

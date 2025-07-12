@@ -183,17 +183,17 @@ local function cleanup_old_sessions()
   end
 end
 
-function craft_item_collated.register_events()
+function craft_item_collated.register_events(event_dispatcher)
   -- Register the three-phase crafting events
-  script.on_event(defines.events.on_pre_player_crafted_item, on_pre_player_crafted_item)
-  script.on_event(defines.events.on_player_crafted_item, on_player_crafted_item)
-  script.on_event(defines.events.on_player_cancelled_crafting, on_player_cancelled_crafting)
+  event_dispatcher.register_handler(defines.events.on_pre_player_crafted_item, on_pre_player_crafted_item)
+  event_dispatcher.register_handler(defines.events.on_player_crafted_item, on_player_crafted_item)
+  event_dispatcher.register_handler(defines.events.on_player_cancelled_crafting, on_player_cancelled_crafting)
   
   -- Register cleanup events
-  script.on_event(defines.events.on_player_left_game, on_player_left_game)
+  event_dispatcher.register_handler(defines.events.on_player_left_game, on_player_left_game)
   
   -- Register periodic cleanup (every 5 minutes)
-  script.on_nth_tick(18000, cleanup_old_sessions)
+  event_dispatcher.register_nth_tick_handler(18000, cleanup_old_sessions)
 end
 
 -- Initialize storage on script load
