@@ -31,7 +31,6 @@ local function create_collated_record(player, recipe_name, start_tick, end_tick,
   rec.total_queued = total_queued
   rec.total_crafted = total_crafted
   rec.total_cancelled = total_cancelled
-  rec.net_crafted = total_crafted - total_cancelled
   
   shared_utils.add_player_context_if_missing(rec, player)
   return rec
