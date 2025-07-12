@@ -40,6 +40,7 @@ local get_resource_patch = require("script.actions.get_resource_patch")
 local get_entity = require("script.actions.get_entity")
 local print_action = require("script.actions.print_action")
 local get_prototype_recipe = require("script.actions.get_prototype_recipe")
+local move_to_collated = require("script.actions.move_to_collated")
 
 -- ============================================================================
 -- CONFIGURATION
@@ -134,6 +135,7 @@ function main.initialize()
   insert_item.register_events()
   launch_rocket.register_events()
   move_to.register_events()
+  move_to_collated.register_events()
   pickup_entity.register_events()
   place_entity.register_events()
   rotate_entity.register_events()
@@ -182,9 +184,11 @@ script.on_init(function()
   shared_utils.initialize_category_buffer("get_entity")
   shared_utils.initialize_category_buffer("print_action")
   shared_utils.initialize_category_buffer("get_prototype_recipe")
+  shared_utils.initialize_category_buffer("move_to_collated")
   
   -- Initialize collated modules
   craft_item_collated.on_init()
+  move_to_collated.on_init()
   
   log('[actions-based-logger] Action-based logging armed')
   log('[actions-based-logger] Writing to individual action jsonl files')
@@ -216,9 +220,11 @@ script.on_load(function()
   shared_utils.initialize_category_buffer("get_entity")
   shared_utils.initialize_category_buffer("print_action")
   shared_utils.initialize_category_buffer("get_prototype_recipe")
+  shared_utils.initialize_category_buffer("move_to_collated")
   
   -- Initialize collated modules
   craft_item_collated.on_load()
+  move_to_collated.on_load()
 end)
 
 -- Periodic flush every FLUSH_EVERY ticks
