@@ -39,29 +39,44 @@ fi
 echo "✓ Found replay.dat in target directory"
 
 # Check if scripts directory exists
-SCRIPTS_DIR="./replay-lab/lua-scripts"
+# SCRIPTS_DIR="./replay-lab/simple-logs"
+# SCRIPTS_DIR="./replay-lab/state-based-logs"
+SCRIPTS_DIR="./replay-lab/actions-based-logs"
 if [ ! -d "$SCRIPTS_DIR" ]; then
     echo "Error: scripts directory not found at $SCRIPTS_DIR"
     exit 1
 fi
 
-# Check if there are any .lua files in the scripts directory
-LUA_FILES=$(find "$SCRIPTS_DIR" -name "*.lua" -type f)
-if [ -z "$LUA_FILES" ]; then
-    echo "Error: No .lua files found in $SCRIPTS_DIR"
+# Check if control.lua exists in the scripts directory
+if [ ! -f "$SCRIPTS_DIR/control.lua" ]; then
+    echo "Error: control.lua not found in $SCRIPTS_DIR"
     exit 1
 fi
 
-# Copy all .lua files from scripts directory to the target directory
-echo "Copying .lua files from scripts directory to target directory..."
-for lua_file in "$SCRIPTS_DIR"/*.lua; do
-    if [ -f "$lua_file" ]; then
-        filename=$(basename "$lua_file")
-        cp "$lua_file" "$TARGET_DIR/"
-        echo "  ✓ Copied $filename"
-    fi
-done
-echo "✓ Copied all .lua files to $TARGET_DIR"
+# Check if script directory exists
+if [ ! -d "$SCRIPTS_DIR/script" ]; then
+    echo "Error: script directory not found in $SCRIPTS_DIR"
+    exit 1
+fi
+
+# Check if script directory already exists in target directory and remove it
+if [ -d "$TARGET_DIR/script" ]; then
+    echo "Found existing script directory in target directory, removing it..."
+    rm -rf "$TARGET_DIR/script"
+    echo "  ✓ Removed existing script directory"
+fi
+
+# Copy control.lua from scripts directory to the target directory
+echo "Copying control.lua from scripts directory to target directory..."
+cp "$SCRIPTS_DIR/control.lua" "$TARGET_DIR/"
+echo "  ✓ Copied control.lua"
+
+# Copy the entire script directory and all its contents
+echo "Copying script directory and all its contents to target directory..."
+cp -r "$SCRIPTS_DIR/script" "$TARGET_DIR/"
+echo "  ✓ Copied script directory with all contents"
+
+echo "✓ Copied control.lua and script directory to $TARGET_DIR"
 
 # Get the parent directory and basename
 PARENT_DIR="$(dirname "$TARGET_DIR")"

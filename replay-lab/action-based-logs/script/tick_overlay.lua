@@ -11,7 +11,7 @@
 -- CONFIGURATION
 -- ============================================================================
 local SHOW_EVERY = 60      -- once per in-game second (60 UPS)
-local TTL = 45             -- time to live (shorter than SHOW_EVERY to prevent pile-up)
+local TTL = 60             -- time to live (shorter than SHOW_EVERY to prevent pile-up)
 
 -- ============================================================================
 -- TICK OVERLAY MODULE

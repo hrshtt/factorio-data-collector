@@ -10,12 +10,12 @@
 -- ============================================================================
 -- MODULE IMPORTS
 -- ============================================================================
-local shared_utils = require("shared-utils")
-local movement = require("movement")
-local logistics = require("logistics")
-local gui = require("gui")
-local construction = require("construction")
-local tick_overlay = require("tick_overlay")
+local shared_utils = require("script.shared-utils")
+local movement = require("script.movement")
+local logistics = require("script.logistics")
+local gui = require("script.gui")
+local construction = require("script.construction")
+local tick_overlay = require("script.tick_overlay")
 -- local snapshot = require("snapshot")
 
 -- ============================================================================

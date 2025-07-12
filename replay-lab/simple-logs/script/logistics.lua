@@ -5,7 +5,7 @@
 --@date 2025-01-27
 --@license MIT
 
-local shared_utils = require("shared-utils")
+local shared_utils = require("script.shared-utils")
 local logistics = {}
 
 -- ============================================================================

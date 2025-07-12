@@ -2,7 +2,7 @@
 -- Factorio 1.1.110-compatible deterministic snapshot module
 -- NO EVENTS - direct scan of all entities and inventories at target tick
 
-local shared_utils = require("shared-utils")
+local shared_utils = require("script.shared-utils")
 local Snapshot = {}
 
 -- ============================================================================
