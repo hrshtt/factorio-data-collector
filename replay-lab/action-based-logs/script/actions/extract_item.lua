@@ -16,6 +16,21 @@ function extract_item.register_events(event_dispatcher)
     rec.action = "extract_item"
     rec.entity = e.entity and e.entity.name or nil
     rec.is_split = e.is_split
+    
+    -- Add item information
+    if e.item_stack and e.item_stack.valid_for_read then
+      rec.item = e.item_stack.name
+      rec.count = e.item_stack.count
+      
+      -- Get item prototype for additional information
+      local item_prototype = game.item_prototypes[e.item_stack.name]
+      if item_prototype then
+        rec.item_type = item_prototype.type
+        rec.item_subgroup = item_prototype.subgroup and item_prototype.subgroup.name or nil
+        rec.item_group = item_prototype.group and item_prototype.group.name or nil
+      end
+    end
+    
     shared_utils.add_player_context_if_missing(rec, player)
     local clean_rec = shared_utils.clean_record(rec)
     local line = game.table_to_json(clean_rec)
