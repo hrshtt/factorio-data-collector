@@ -86,7 +86,6 @@ function screenshot_module.take_screenshot(tick)
     return
   end
   
-  log('[SCREENSHOT] Attempting screenshot at tick ' .. tick)
   
   global.screenshot_data.last_screenshot_tick = tick
   global.screenshot_data.screenshot_count = global.screenshot_data.screenshot_count + 1
@@ -94,15 +93,9 @@ function screenshot_module.take_screenshot(tick)
   -- Create screenshots directory if it doesn't exist
   local screenshot_dir = "screenshots"
   local dir_created = game.write_file(screenshot_dir .. "/.keep", "", false) -- Create directory
-  log('[SCREENSHOT] Directory creation result: ' .. tostring(dir_created))
   
   -- Generate filename with tick number and counter
-  local filename = string.format("%s/screenshot_tick_%d_%04d.png", screenshot_dir, tick, global.screenshot_data.screenshot_count)
-  log('[SCREENSHOT] Target filename: ' .. filename)
-  
-  -- Check if we have any players (needed for some screenshot operations)
   local player_count = #game.players
-  log('[SCREENSHOT] Player count: ' .. player_count)
   
   -- Take a global screenshot with error handling
   local success = false
@@ -112,7 +105,20 @@ function screenshot_module.take_screenshot(tick)
   if player_count > 0 then
     -- Use first player's view for screenshot
     local first_player = game.players[1]
-    log('[SCREENSHOT] Using first player view: ' .. first_player.name)
+    
+    -- Get player position and view dimensions
+    local center_x = math.floor(first_player.position.x)
+    local center_y = math.floor(first_player.position.y)
+    
+    -- Use a default zoom value since player.zoom doesn't exist
+    local zoom = 1.0  -- Default zoom level
+    local view_width = math.floor(1920 / (32 * zoom))  -- Approximate tiles visible
+    local view_height = math.floor(1080 / (32 * zoom)) -- Approximate tiles visible
+    
+    -- Generate filename with coordinates and view dimensions
+    local filename = string.format("%s/screenshot_tick_%d_%04d_pos_%d_%d_view_%dx%d.png", 
+      screenshot_dir, tick, global.screenshot_data.screenshot_count, 
+      center_x, center_y, view_width, view_height)
     
     success = game.take_screenshot{
       resolution = {width = 1920, height = 1080},
@@ -123,35 +129,15 @@ function screenshot_module.take_screenshot(tick)
     }
   else
     -- No players, try global screenshot
-    log('[SCREENSHOT] No players available, attempting global screenshot')
+    local filename = string.format("%s/screenshot_tick_%d_%04d_global.png", 
+      screenshot_dir, tick, global.screenshot_data.screenshot_count)
+    
     success = game.take_screenshot{
       resolution = {width = 1920, height = 1080},
       zoom = 1.0,
       allow_in_replay = true,
       path = filename
     }
-  end
-  
-  if success then
-    log(string.format('[SCREENSHOT] SUCCESS: Saved screenshot at tick %d: %s', tick, filename))
-  else
-    log(string.format('[SCREENSHOT] FAILED: Could not save screenshot at tick %d', tick))
-    log('[SCREENSHOT] Error details: ' .. tostring(error_msg))
-    
-    -- Try alternative screenshot method
-    log('[SCREENSHOT] Attempting alternative screenshot method...')
-    local alt_success = game.take_screenshot{
-      resolution = {width = 1280, height = 720}, -- Lower resolution
-      zoom = 0.5, -- Lower zoom
-      allow_in_replay = true,
-      path = filename .. ".alt.png"
-    }
-    
-    if alt_success then
-      log('[SCREENSHOT] Alternative method SUCCESS: ' .. filename .. ".alt.png")
-    else
-      log('[SCREENSHOT] Alternative method also FAILED')
-    end
   end
 end
 
