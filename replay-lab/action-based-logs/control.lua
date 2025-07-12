@@ -15,6 +15,7 @@ local tick_overlay = require("script.tick_overlay")
 
 -- Core actions
 local craft_item = require("script.actions.craft_item")
+local craft_item_collated = require("script.actions.craft_item_collated")
 local extract_item = require("script.actions.extract_item")
 local harvest_resource = require("script.actions.harvest_resource")
 local harvest_resource_collated = require("script.actions.harvest_resource_collated")
@@ -126,6 +127,7 @@ function main.initialize()
   
   -- Core actions
   craft_item.register_events()
+  craft_item_collated.register_events()
   extract_item.register_events()
   harvest_resource.register_events()
   harvest_resource_collated.register_events()
@@ -159,6 +161,7 @@ script.on_init(function()
   -- Initialize category buffers for all actions
   shared_utils.initialize_category_buffer("core-meta")
   shared_utils.initialize_category_buffer("craft_item")
+  shared_utils.initialize_category_buffer("craft_item_collated")
   shared_utils.initialize_category_buffer("extract_item")
   shared_utils.initialize_category_buffer("harvest_resource")
   shared_utils.initialize_category_buffer("harvest_resource_collated")
@@ -180,6 +183,9 @@ script.on_init(function()
   shared_utils.initialize_category_buffer("print_action")
   shared_utils.initialize_category_buffer("get_prototype_recipe")
   
+  -- Initialize collated modules
+  craft_item_collated.on_init()
+  
   log('[actions-based-logger] Action-based logging armed')
   log('[actions-based-logger] Writing to individual action jsonl files')
   log('[tick-overlay] Tick overlay enabled for replays and multiplayer')
@@ -189,6 +195,7 @@ script.on_load(function()
   -- Initialize category buffers on load
   shared_utils.initialize_category_buffer("core-meta")
   shared_utils.initialize_category_buffer("craft_item")
+  shared_utils.initialize_category_buffer("craft_item_collated")
   shared_utils.initialize_category_buffer("extract_item")
   shared_utils.initialize_category_buffer("harvest_resource")
   shared_utils.initialize_category_buffer("harvest_resource_collated")
@@ -209,6 +216,9 @@ script.on_load(function()
   shared_utils.initialize_category_buffer("get_entity")
   shared_utils.initialize_category_buffer("print_action")
   shared_utils.initialize_category_buffer("get_prototype_recipe")
+  
+  -- Initialize collated modules
+  craft_item_collated.on_load()
 end)
 
 -- Periodic flush every FLUSH_EVERY ticks

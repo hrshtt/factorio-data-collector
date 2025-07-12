@@ -24,6 +24,8 @@ function harvest_resource.register_events()
     local player = game.players[e.player_index]
     local rec = shared_utils.create_base_record("on_player_mined_item", e)
     rec.action = "harvest_resource"
+    rec.item = e.item_stack and e.item_stack.name or nil
+    rec.count = e.item_stack and e.item_stack.count or nil
     shared_utils.add_player_context_if_missing(rec, player)
     local clean_rec = shared_utils.clean_record(rec)
     local line = game.table_to_json(clean_rec)
