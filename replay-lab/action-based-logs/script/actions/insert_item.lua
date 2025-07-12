@@ -1,9 +1,9 @@
 --@insert_item.lua
 --@description Comprehensive item transfer action logger
 --@author Harshit Sharma
---@version 2.0.0
+--@version 2.1.0
 --@date 2025-01-27
---@note Implements full item transfer detection based on Factorio 1.1.110 event landscape
+--@note Implements full item transfer detection with entity-side diff for Z-key inserts
 
 local insert_item = {}
 local shared_utils = require("script.shared-utils")
@@ -21,6 +21,7 @@ local function initialize_player_state(player_index)
       previous_cursor_stack = nil,
       open_gui_entity = nil,
       selected_entity = nil,
+      selected_entity_snapshot = {},
       cursor_became_empty_tick = nil
     }
   end
@@ -38,6 +39,22 @@ local function get_inventory_snapshot(inventory)
     end
   end
   return snapshot
+end
+
+local function get_entity_inventory_snapshot(entity)
+  if not entity or not entity.valid then return {} end
+  
+  -- Try to get the main inventory (works for chests, assemblers, etc.)
+  local inventory = entity.get_inventory(defines.inventory.chest)
+  if not inventory then
+    -- Try other inventory types
+    inventory = entity.get_inventory(defines.inventory.furnace_source)
+    if not inventory then
+      inventory = entity.get_inventory(defines.inventory.assembling_machine_input)
+    end
+  end
+  
+  return get_inventory_snapshot(inventory)
 end
 
 local function get_cursor_stack_info(player)
@@ -124,7 +141,23 @@ local function on_dropped_item(e)
   })
 end
 
--- 3. Cursor stack changes (for intent tracking)
+-- 3. Selected entity changed (for Z-key context tracking)
+local function on_selected_entity_changed(e)
+  if not shared_utils.is_player_event(e) then return end
+  
+  initialize_player_state(e.player_index)
+  local state = global.insert_item_state[e.player_index]
+  
+  -- Store the selected entity and its inventory snapshot
+  state.selected_entity = e.last_entity
+  if e.last_entity and e.last_entity.valid then
+    state.selected_entity_snapshot = get_entity_inventory_snapshot(e.last_entity)
+  else
+    state.selected_entity_snapshot = {}
+  end
+end
+
+-- 4. Cursor stack changes (for intent tracking)
 local function on_cursor_stack_changed(e)
   if not shared_utils.is_player_event(e) then return end
   
@@ -134,16 +167,15 @@ local function on_cursor_stack_changed(e)
   local state = global.insert_item_state[e.player_index]
   local cursor_item, cursor_count = get_cursor_stack_info(player)
   
-  -- Track when cursor becomes empty (useful for Z-key insert detection)
+  -- Track when cursor becomes empty (useful for some edge cases)
   if not cursor_item and state.previous_cursor_stack then
     state.cursor_became_empty_tick = game.tick
-    state.selected_entity = player.selected and player.selected.name or nil
   end
   
   state.previous_cursor_stack = cursor_item and {name = cursor_item, count = cursor_count} or nil
 end
 
--- 4. GUI opened/closed (for context tracking)
+-- 5. GUI opened/closed (for context tracking)
 local function on_gui_opened(e)
   if not shared_utils.is_player_event(e) then return end
   
@@ -162,7 +194,7 @@ local function on_gui_closed(e)
   state.open_gui_entity = nil
 end
 
--- 5. Main inventory changed (handles everything else via diffing)
+-- 6. Main inventory changed (handles everything via diffing)
 local function on_main_inventory_changed(e)
   if not shared_utils.is_player_event(e) then return end
   
@@ -172,12 +204,12 @@ local function on_main_inventory_changed(e)
   local state = global.insert_item_state[e.player_index]
   local current_inventory = get_inventory_snapshot(player.get_main_inventory())
   
-  -- Compute delta
-  local delta = compute_inventory_delta(state.previous_main_inventory, current_inventory)
+  -- Compute player inventory delta
+  local player_delta = compute_inventory_delta(state.previous_main_inventory, current_inventory)
   
-  -- Only log if there's actually a change
+  -- Only process if there's actually a change
   local has_changes = false
-  for item, change in pairs(delta) do
+  for item, change in pairs(player_delta) do
     if change ~= 0 then
       has_changes = true
       break
@@ -185,37 +217,62 @@ local function on_main_inventory_changed(e)
   end
   
   if has_changes then
-    -- Determine transfer context
-    local transfer_type = "unknown_transfer"
-    local target_entity = nil
+    -- Get entity delta if we have a selected entity
+    local entity_delta = {}
+    local current_entity_snapshot = {}
     
-    if state.open_gui_entity then
-      -- GUI was open - this is likely a stack transfer or drag-drop
-      transfer_type = "gui_transfer"
-      target_entity = state.open_gui_entity
-    elseif state.cursor_became_empty_tick and (game.tick - state.cursor_became_empty_tick) <= 2 then
-      -- Cursor became empty recently, likely Z-key insert
-      transfer_type = "z_key_insert"
-      target_entity = state.selected_entity
-    else
-      -- Some other kind of transfer
-      transfer_type = "inventory_change"
+    if state.selected_entity and state.selected_entity.valid then
+      current_entity_snapshot = get_entity_inventory_snapshot(state.selected_entity)
+      entity_delta = compute_inventory_delta(state.selected_entity_snapshot, current_entity_snapshot)
     end
     
-    -- Log each item change
-    for item, change in pairs(delta) do
-      if change ~= 0 then
+    -- Process each item change
+    for item, player_change in pairs(player_delta) do
+      if player_change ~= 0 then
+        local entity_change = entity_delta[item] or 0
+        local transfer_type = "unknown_transfer"
+        local target_entity = nil
+        
+        -- Check if this is a Z-key insert/extract (player delta negates entity delta)
+        if entity_change ~= 0 and player_change == -entity_change then
+          if player_change < 0 then
+            -- Player lost items, entity gained them
+            transfer_type = "z_key_insert"
+            target_entity = state.selected_entity.name
+          else
+            -- Player gained items, entity lost them
+            transfer_type = "z_key_extract"
+            target_entity = state.selected_entity.name
+          end
+        elseif state.open_gui_entity then
+          -- GUI was open - this is likely a stack transfer or drag-drop
+          transfer_type = "gui_transfer"
+          target_entity = state.open_gui_entity
+        elseif state.cursor_became_empty_tick and (game.tick - state.cursor_became_empty_tick) <= 2 then
+          -- Cursor became empty recently (fallback for edge cases)
+          transfer_type = "cursor_insert"
+          target_entity = state.selected_entity and state.selected_entity.name or nil
+        else
+          -- Some other kind of transfer (crafting, mining, etc.)
+          transfer_type = "inventory_change"
+        end
+        
         log_transfer("on_player_main_inventory_changed", player, transfer_type, {
           item = item,
-          count = math.abs(change),
-          direction = change > 0 and "to_player" or "from_player",
+          count = math.abs(player_change),
+          direction = player_change > 0 and "to_player" or "from_player",
           target_entity = target_entity
         })
       end
     end
+    
+    -- Update entity snapshot after processing
+    if state.selected_entity and state.selected_entity.valid then
+      state.selected_entity_snapshot = current_entity_snapshot
+    end
   end
   
-  -- Update state
+  -- Update player inventory state
   state.previous_main_inventory = current_inventory
 end
 
@@ -230,6 +287,12 @@ local function on_player_joined(e)
   -- Initialize with current inventory state
   state.previous_main_inventory = get_inventory_snapshot(player.get_main_inventory())
   state.previous_cursor_stack = get_cursor_stack_info(player)
+  
+  -- Initialize selected entity state
+  if player.selected and player.selected.valid then
+    state.selected_entity = player.selected
+    state.selected_entity_snapshot = get_entity_inventory_snapshot(player.selected)
+  end
 end
 
 -- ============================================================================
@@ -242,6 +305,7 @@ function insert_item.register_events()
   script.on_event(defines.events.on_player_main_inventory_changed, on_main_inventory_changed)
   
   -- Context tracking events
+  script.on_event(defines.events.on_selected_entity_changed, on_selected_entity_changed)
   script.on_event(defines.events.on_player_cursor_stack_changed, on_cursor_stack_changed)
   script.on_event(defines.events.on_gui_opened, on_gui_opened)
   script.on_event(defines.events.on_gui_closed, on_gui_closed)
