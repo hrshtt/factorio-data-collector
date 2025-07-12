@@ -47,6 +47,128 @@ local move_to_collated = require("script.actions.move_to_collated")
 -- CONFIGURATION
 -- ============================================================================
 local FLUSH_EVERY = 600        -- 10 s at 60 UPS
+local SCREENSHOT_INTERVAL = 60 -- 1 s at 60 UPS
+local ENABLE_SCREENSHOTS = true -- Set to false to disable screenshots entirely
+
+-- ============================================================================
+-- SCREENSHOT MODULE
+-- ============================================================================
+local screenshot_module = {}
+
+-- Initialize screenshot storage
+function screenshot_module.initialize_storage()
+  if not global.screenshot_data then
+    global.screenshot_data = {
+      screenshot_count = 0,
+      last_screenshot_tick = 0
+    }
+  end
+end
+
+-- Take a screenshot and save it
+function screenshot_module.take_screenshot(tick)
+  -- Check if screenshots are enabled
+  if not ENABLE_SCREENSHOTS then
+    return
+  end
+  
+  -- Ensure storage is initialized
+  screenshot_module.initialize_storage()
+  
+  -- Additional safety check in case global is nil
+  if not global or not global.screenshot_data then
+    log('[SCREENSHOT] Warning: Screenshot data not available, skipping screenshot at tick ' .. tick)
+    return
+  end
+  
+  -- Only take screenshot if enough time has passed
+  if tick - global.screenshot_data.last_screenshot_tick < SCREENSHOT_INTERVAL then
+    return
+  end
+  
+  log('[SCREENSHOT] Attempting screenshot at tick ' .. tick)
+  
+  global.screenshot_data.last_screenshot_tick = tick
+  global.screenshot_data.screenshot_count = global.screenshot_data.screenshot_count + 1
+  
+  -- Create screenshots directory if it doesn't exist
+  local screenshot_dir = "screenshots"
+  local dir_created = game.write_file(screenshot_dir .. "/.keep", "", false) -- Create directory
+  log('[SCREENSHOT] Directory creation result: ' .. tostring(dir_created))
+  
+  -- Generate filename with tick number and counter
+  local filename = string.format("%s/screenshot_tick_%d_%04d.png", screenshot_dir, tick, global.screenshot_data.screenshot_count)
+  log('[SCREENSHOT] Target filename: ' .. filename)
+  
+  -- Check if we have any players (needed for some screenshot operations)
+  local player_count = #game.players
+  log('[SCREENSHOT] Player count: ' .. player_count)
+  
+  -- Take a global screenshot with error handling
+  local success = false
+  local error_msg = "Unknown error"
+  
+  -- Try different screenshot approaches based on player count
+  if player_count > 0 then
+    -- Use first player's view for screenshot
+    local first_player = game.players[1]
+    log('[SCREENSHOT] Using first player view: ' .. first_player.name)
+    
+    success = game.take_screenshot{
+      resolution = {width = 1920, height = 1080},
+      zoom = 1.0,
+      path = filename,
+      allow_in_replay = true,
+      player = first_player
+    }
+  else
+    -- No players, try global screenshot
+    log('[SCREENSHOT] No players available, attempting global screenshot')
+    success = game.take_screenshot{
+      resolution = {width = 1920, height = 1080},
+      zoom = 1.0,
+      allow_in_replay = true,
+      path = filename
+    }
+  end
+  
+  if success then
+    log(string.format('[SCREENSHOT] SUCCESS: Saved screenshot at tick %d: %s', tick, filename))
+  else
+    log(string.format('[SCREENSHOT] FAILED: Could not save screenshot at tick %d', tick))
+    log('[SCREENSHOT] Error details: ' .. tostring(error_msg))
+    
+    -- Try alternative screenshot method
+    log('[SCREENSHOT] Attempting alternative screenshot method...')
+    local alt_success = game.take_screenshot{
+      resolution = {width = 1280, height = 720}, -- Lower resolution
+      zoom = 0.5, -- Lower zoom
+      allow_in_replay = true,
+      path = filename .. ".alt.png"
+    }
+    
+    if alt_success then
+      log('[SCREENSHOT] Alternative method SUCCESS: ' .. filename .. ".alt.png")
+    else
+      log('[SCREENSHOT] Alternative method also FAILED')
+    end
+  end
+end
+
+-- Register screenshot events
+function screenshot_module.register_events(event_dispatcher)
+  if not ENABLE_SCREENSHOTS then
+    log('[SCREENSHOT] Screenshots disabled in configuration')
+    return
+  end
+  
+  -- Register periodic screenshot taking
+  event_dispatcher.register_nth_tick_handler(SCREENSHOT_INTERVAL, function(event)
+    screenshot_module.take_screenshot(event.tick)
+  end)
+  
+  log('[SCREENSHOT] Screenshot module registered - taking screenshots every ' .. SCREENSHOT_INTERVAL .. ' ticks')
+end
 
 -- ============================================================================
 -- CENTRALIZED EVENT DISPATCHER
@@ -138,6 +260,9 @@ function main.initialize()
   -- Register tick overlay events
   tick_overlay.register_events(event_dispatcher)
   
+  -- Register screenshot module
+  screenshot_module.register_events(event_dispatcher)
+  
   -- Register action module handlers
   craft_item.register_events(event_dispatcher)
   craft_item_collated.register_events(event_dispatcher)
@@ -173,6 +298,9 @@ end
 -- SCRIPT INITIALIZATION
 -- ============================================================================
 script.on_init(function()
+  -- Initialize screenshot storage
+  screenshot_module.initialize_storage()
+  
   -- Initialize category buffers for all actions
   shared_utils.initialize_category_buffer("core-meta")
   shared_utils.initialize_category_buffer("craft_item")
@@ -208,9 +336,13 @@ script.on_init(function()
   log('[actions-based-logger] Action-based logging armed')
   log('[actions-based-logger] Writing to individual action jsonl files')
   log('[tick-overlay] Tick overlay enabled for replays and multiplayer')
+  log('[screenshot] Screenshot module enabled - taking screenshots every ' .. SCREENSHOT_INTERVAL .. ' ticks')
 end)
 
 script.on_load(function()
+  -- Initialize screenshot storage
+  screenshot_module.initialize_storage()
+  
   -- Initialize category buffers on load
   shared_utils.initialize_category_buffer("core-meta")
   shared_utils.initialize_category_buffer("craft_item")
@@ -243,8 +375,6 @@ script.on_load(function()
   insert_item_collated.on_load()
   move_to_collated.on_load()
 end)
-
-
 
 -- ============================================================================
 -- REPLAY MARKERS & COLLATION PROCESSING

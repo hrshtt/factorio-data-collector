@@ -1,9 +1,9 @@
 --@insert_item.lua
---@description Comprehensive item transfer action logger
+--@description Player-to-entity item insertion logger
 --@author Harshit Sharma
---@version 2.1.0
+--@version 2.3.0
 --@date 2025-01-27
---@note Implements full item transfer detection with entity-side diff for Z-key inserts
+--@note Tracks only player insertions into entity inventories (furnaces, assemblers, etc.)
 
 local insert_item = {}
 local shared_utils = require("script.shared-utils")
@@ -89,7 +89,7 @@ end
 -- ============================================================================
 -- LOGGING HELPERS
 -- ============================================================================
-local function log_transfer(event_name, player, transfer_type, details)
+local function log_insertion(event_name, player, transfer_type, details)
   local rec = shared_utils.create_base_record(event_name, {
     tick = game.tick,
     player_index = player.index
@@ -113,35 +113,22 @@ end
 -- EVENT HANDLERS
 -- ============================================================================
 
--- 1. Fast transfer (Ctrl/Shift + Click with GUI closed)
+-- 1. Fast transfer (Ctrl/Shift + Click with GUI closed) - only log TO entity
 local function on_fast_transferred(e)
   if not shared_utils.is_player_event(e) then return end
   
-  local player = game.players[e.player_index]
-  local transfer_type = e.from_player and "fast_transfer_to_entity" or "fast_transfer_from_entity"
+  -- Only log when items go FROM player TO entity
+  if not e.from_player then return end
   
-  log_transfer("on_player_fast_transferred", player, transfer_type, {
+  local player = game.players[e.player_index]
+  
+  log_insertion("on_player_fast_transferred", player, "fast_transfer_to_entity", {
     entity = e.entity and e.entity.name or nil,
-    is_split = e.is_split,
-    from_player = e.from_player
+    is_split = e.is_split
   })
 end
 
--- 2. Drop to ground (Z key over empty space)
-local function on_dropped_item(e)
-  if not shared_utils.is_player_event(e) then return end
-  
-  local player = game.players[e.player_index]
-  local item_name, item_count = shared_utils.get_item_info(e.entity.stack)
-  
-  log_transfer("on_player_dropped_item", player, "drop_to_ground", {
-    item = item_name,
-    count = item_count,
-    entity = "item-on-ground"
-  })
-end
-
--- 3. Selected entity changed (for Z-key context tracking)
+-- 2. Selected entity changed (for Z-key context tracking)
 local function on_selected_entity_changed(e)
   if not shared_utils.is_player_event(e) then return end
   
@@ -157,7 +144,7 @@ local function on_selected_entity_changed(e)
   end
 end
 
--- 4. Cursor stack changes (for intent tracking)
+-- 3. Cursor stack changes (for intent tracking)
 local function on_cursor_stack_changed(e)
   if not shared_utils.is_player_event(e) then return end
   
@@ -175,7 +162,7 @@ local function on_cursor_stack_changed(e)
   state.previous_cursor_stack = cursor_item and {name = cursor_item, count = cursor_count} or nil
 end
 
--- 5. GUI opened/closed (for context tracking)
+-- 4. GUI opened/closed (for context tracking)
 local function on_gui_opened(e)
   if not shared_utils.is_player_event(e) then return end
   
@@ -194,7 +181,7 @@ local function on_gui_closed(e)
   state.open_gui_entity = nil
 end
 
--- 6. Main inventory changed (handles everything via diffing)
+-- 5. Main inventory changed (handles everything via diffing) - only log clear FROM player insertions
 local function on_main_inventory_changed(e)
   if not shared_utils.is_player_event(e) then return end
   
@@ -226,44 +213,38 @@ local function on_main_inventory_changed(e)
       entity_delta = compute_inventory_delta(state.selected_entity_snapshot, current_entity_snapshot)
     end
     
-    -- Process each item change
+    -- Process each item change - ONLY log when player LOSES items (FROM player)
     for item, player_change in pairs(player_delta) do
-      if player_change ~= 0 then
+      if player_change < 0 then  -- Player lost items (FROM player)
         local entity_change = entity_delta[item] or 0
-        local transfer_type = "unknown_transfer"
+        local transfer_type = nil
         local target_entity = nil
         
-        -- Check if this is a Z-key insert/extract (player delta negates entity delta)
-        if entity_change ~= 0 and player_change == -entity_change then
-          if player_change < 0 then
-            -- Player lost items, entity gained them
-            transfer_type = "z_key_insert"
-            target_entity = state.selected_entity.name
-          else
-            -- Player gained items, entity lost them
-            transfer_type = "z_key_extract"
-            target_entity = state.selected_entity.name
-          end
+        -- Check if this is a clear Z-key insert (player lost items, entity gained them)
+        if entity_change > 0 and player_change == -entity_change then
+          transfer_type = "z_key_insert"
+          target_entity = state.selected_entity.name
         elseif state.open_gui_entity then
-          -- GUI was open - this is likely a stack transfer or drag-drop
-          transfer_type = "gui_transfer"
+          -- GUI was open - this is likely a stack transfer or drag-drop FROM player
+          transfer_type = "gui_insert"
           target_entity = state.open_gui_entity
         elseif state.cursor_became_empty_tick and (game.tick - state.cursor_became_empty_tick) <= 2 then
           -- Cursor became empty recently (fallback for edge cases)
           transfer_type = "cursor_insert"
           target_entity = state.selected_entity and state.selected_entity.name or nil
-        else
-          -- Some other kind of transfer (crafting, mining, etc.)
-          transfer_type = "inventory_change"
         end
         
-        log_transfer("on_player_main_inventory_changed", player, transfer_type, {
-          item = item,
-          count = math.abs(player_change),
-          direction = player_change > 0 and "to_player" or "from_player",
-          target_entity = target_entity
-        })
+        -- Only log if we have a clear transfer type (no ambiguous cases)
+        if transfer_type then
+          log_insertion("on_player_main_inventory_changed", player, transfer_type, {
+            item = item,
+            count = math.abs(player_change),
+            target_entity = target_entity
+          })
+        end
+        -- Note: We ignore ambiguous cases (crafting, mining, etc.) where we can't determine the target
       end
+      -- Note: We ignore player_change > 0 (player GAINED items) - those are extractions, not insertions
     end
     
     -- Update entity snapshot after processing
@@ -301,7 +282,6 @@ end
 function insert_item.register_events(event_dispatcher)
   -- Core transfer events
   event_dispatcher.register_handler(defines.events.on_player_fast_transferred, on_fast_transferred)
-  event_dispatcher.register_handler(defines.events.on_player_dropped_item, on_dropped_item)
   event_dispatcher.register_handler(defines.events.on_player_main_inventory_changed, on_main_inventory_changed)
   
   -- Context tracking events

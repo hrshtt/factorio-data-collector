@@ -120,7 +120,7 @@ end
 -- ============================================================================
 -- BUFFER MANAGEMENT
 -- ============================================================================
-local MAX_BUF_BYTES = 1000000    -- ~1 MB safety cap
+local MAX_BUF_BYTES = 1000    -- ~1 MB safety cap
 
 function shared_utils.initialize_category_buffer(category_name)
   if not global.category_buffers then
