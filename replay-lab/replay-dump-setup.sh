@@ -51,8 +51,11 @@ case "$SCRIPT_TYPE" in
     "action")
         SCRIPTS_DIR="./replay-lab/action-based-logs"
         ;;
+    "raw")
+        SCRIPTS_DIR="./replay-lab/raw-logs"
+        ;;
     *)
-        echo "Error: Invalid script type '$SCRIPT_TYPE'. Use: simple, state, or action"
+        echo "Error: Invalid script type '$SCRIPT_TYPE'. Use: simple, state, action, or raw"
         exit 1
         ;;
 esac
