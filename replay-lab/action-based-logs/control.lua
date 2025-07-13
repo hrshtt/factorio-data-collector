@@ -29,6 +29,7 @@ local rotate_entity = require("script.actions.rotate_entity")
 local send_message = require("script.actions.send_message")
 local set_entity_recipe = require("script.actions.set_entity_recipe")
 local set_research = require("script.actions.set_research")
+local player_inventory_transfers = require("script.actions.player_inventory_transfers")
 
 -- Observation actions
 local get_entities = require("script.actions.get_entities")
@@ -155,6 +156,7 @@ function main.initialize()
   send_message.register_events(event_dispatcher)
   set_entity_recipe.register_events(event_dispatcher)
   set_research.register_events(event_dispatcher)
+  player_inventory_transfers.register_events(event_dispatcher)
   
   -- Observation actions
   get_entities.register_events(event_dispatcher)
@@ -199,6 +201,7 @@ script.on_init(function()
   shared_utils.initialize_category_buffer("print_action")
   shared_utils.initialize_category_buffer("get_prototype_recipe")
   shared_utils.initialize_category_buffer("move_to_collated")
+  shared_utils.initialize_category_buffer("player_inventory_transfers")
   
   -- Initialize collated modules
   craft_item_collated.on_init()
@@ -237,7 +240,7 @@ script.on_load(function()
   shared_utils.initialize_category_buffer("print_action")
   shared_utils.initialize_category_buffer("get_prototype_recipe")
   shared_utils.initialize_category_buffer("move_to_collated")
-  
+  shared_utils.initialize_category_buffer("player_inventory_transfers")
   -- Initialize collated modules
   craft_item_collated.on_load()
   insert_item_collated.on_load()
