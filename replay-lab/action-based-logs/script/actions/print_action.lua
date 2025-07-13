@@ -8,7 +8,7 @@ local print_action = {}
 local shared_utils = require("script.shared-utils")
 
 function print_action.register_events(event_dispatcher)
-  -- This module doesn't register any events - it's called by other modules
+  -- TODO: Implement print action event registration
 end
 
 return print_action 

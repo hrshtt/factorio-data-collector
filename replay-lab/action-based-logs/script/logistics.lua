@@ -34,7 +34,39 @@ function logistics.diff_tables(old_contents, new_contents)
   return deltas
 end
 
-function logistics.get_inventory_contents(holder, inventory_type)
+function logistics.get_inventory_contents(entity)
+  if not entity or not entity.valid then return {} end
+
+  local contents = {}
+  local inventory = entity.get_inventory(defines.inventory.chest)
+
+  -- Try different inventory types based on entity type
+  if not inventory then
+    if entity.type == "assembling-machine" or entity.type == "oil-refinery" or entity.type == "chemical-plant" then
+      inventory = entity.get_inventory(defines.inventory.assembling_machine_input)
+    elseif entity.type == "furnace" then
+      inventory = entity.get_inventory(defines.inventory.furnace_source)
+    elseif entity.type == "character" then
+      inventory = entity.get_inventory(defines.inventory.character_main)
+    elseif entity.type == "lab" then
+      inventory = entity.get_inventory(defines.inventory.lab_input)
+    elseif entity.type == "mining-drill" then
+      inventory = entity.get_inventory(defines.inventory.mining_drill_modules)
+    elseif entity.type == "roboport" then
+      inventory = entity.get_inventory(defines.inventory.roboport_robot)
+    elseif entity.type == "turret" or entity.type == "ammo-turret" then
+      inventory = entity.get_inventory(defines.inventory.turret_ammo)
+    end
+  end
+
+  if inventory and inventory.valid then
+    contents = inventory.get_contents()
+  end
+
+  return contents or {}
+end
+
+function logistics.get_inventory_contents_by_holder(holder, inventory_type)
   if not (holder and holder.valid) then
     return {}
   end
@@ -91,7 +123,7 @@ function logistics.update_player_snapshot(player_index)
   end
 
   local ctx = logistics.get_player_context(player_index)
-  ctx.last_player_snapshot = logistics.get_inventory_contents(player, defines.inventory.character_main)
+  ctx.last_player_snapshot = logistics.get_inventory_contents_by_holder(player, defines.inventory.character_main)
 end
 
 function logistics.matches_entity_gui(gui_event, entity)
@@ -125,7 +157,7 @@ function logistics.get_entity_snapshot(entity, inventory_index)
   local unit_number = entity.unit_number
   local snapshot = global.entity_snapshots[unit_number]
   if not snapshot then
-    snapshot = logistics.get_inventory_contents(entity, inventory_index)
+    snapshot = logistics.get_inventory_contents_by_holder(entity, inventory_index)
     global.entity_snapshots[unit_number] = snapshot
   end
   return snapshot
@@ -137,7 +169,7 @@ function logistics.update_entity_snapshot(entity, inventory_index)
   end
 
   local unit_number = entity.unit_number
-  local contents = logistics.get_inventory_contents(entity, inventory_index)
+  local contents = logistics.get_inventory_contents_by_holder(entity, inventory_index)
   global.entity_snapshots[unit_number] = contents
 end
 
@@ -146,5 +178,49 @@ function logistics.cleanup_entity_snapshot(entity)
     global.entity_snapshots[entity.unit_number] = nil
   end
 end
+
+-- Entities where a player can manually add/remove items
+logistics.player_accessible_types = {
+  ["assembling-machine"] = true,
+  ["oil-refinery"] = true,
+  ["chemical-plant"] = true,
+  ["rocket-silo"] = true,
+  ["furnace"] = true,
+  ["container"] = true,
+  ["logistic-container"] = true,
+  ["infinity-container"] = true,
+  ["linked-container"] = true,
+  ["cargo-wagon"] = true,
+  ["car"] = true,
+  ["tank"] = true,
+  ["spider-vehicle"] = true,
+  ["artillery-wagon"] = true,
+  ["mining-drill"] = true,
+  ["turret"] = true,
+  ["ammo-turret"] = true,
+  ["artillery-turret"] = true,
+  ["lab"] = true,
+  ["roboport"] = true,
+  ["reactor"] = true,
+  ["boiler"] = true,
+  ["burner-generator"] = true,
+  ["market"] = true,
+  ["character"] = true,
+  ["character-corpse"] = true,
+}
+
+function logistics.is_player_accessible(entity)
+  return entity and entity.valid and logistics.player_accessible_types[entity.type]
+end
+
+function logistics.can_be_inserted(item_name)
+  if not item_name then return false end
+  
+  local item_prototype = game.item_prototypes[item_name]
+  if not item_prototype then return false end
+  
+  return not item_prototype.place_result and not item_prototype.place_as_equipment_result
+ end
+-- Helper function to get inventory contents as a table
 
 return logistics

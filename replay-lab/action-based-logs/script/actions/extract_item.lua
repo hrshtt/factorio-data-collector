@@ -38,8 +38,8 @@ function extract_item.register_events(event_dispatcher)
     end
 
     -- Get current state (after transfer)
-    local curr_player = logistics.get_inventory_contents(player, defines.inventory.character_main)
-    local curr_entity = logistics.get_inventory_contents(entity, inventory_index)
+    local curr_player = logistics.get_inventory_contents_by_holder(player, defines.inventory.character_main)
+    local curr_entity = logistics.get_inventory_contents_by_holder(entity, inventory_index)
     
     -- Get the stored snapshots
     local ctx = logistics.get_player_context(e.player_index)

@@ -8,7 +8,7 @@ local score = {}
 local shared_utils = require("script.shared-utils")
 
 function score.register_events(event_dispatcher)
-  -- This module doesn't register any events - it's called by other modules
+  -- TODO: Implement score event registration
 end
 
 return score 

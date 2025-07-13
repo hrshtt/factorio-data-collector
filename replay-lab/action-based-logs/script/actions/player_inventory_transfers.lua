@@ -8,10 +8,11 @@ local player_inventory_transfers = {}
 local shared_utils = require("script.shared-utils")
 local logistics = require("script.logistics")
 
--- =============================== log schema ===============================
--- insert_item: entity, item, count, event_name (gui, fast_transfer, selected_entity_changed)
--- extract_item: entity, item, count, event_name (gui, fast_transfer, selected_entity_changed)
--- =============================== log schema ===============================
+
+-- =========================
+-- Fast Transfer Logic
+-- =========================
+local fast_transfer_logic = {}
 
 -- Storage for tracking sessions
 local sessions = {}
@@ -30,7 +31,7 @@ local function create_transfer_record(player, action_type, entity, item_deltas, 
   })
   
   rec.action = action_type -- "insert_item" or "extract_item"
-  rec.event_name = event_name
+  -- rec.event_name = event_name
   rec.entity = entity.name
   rec.entity_x = string.format("%.1f", entity.position.x)
   rec.entity_y = string.format("%.1f", entity.position.y)
@@ -94,8 +95,7 @@ local function finalize_session(session_key, end_tick, from_player)
   sessions[session_key] = nil
 end
 
--- Handler for when player selects an entity
-local function on_selected_entity_changed(event)
+function fast_transfer_logic.on_selected_entity_changed(event)
   if not shared_utils.is_player_event(event) then return end
   
   local player = game.players[event.player_index]
@@ -131,8 +131,7 @@ local function on_selected_entity_changed(event)
   }
 end
 
--- Handler for fast transfer
-local function on_player_fast_transferred(event)
+function fast_transfer_logic.on_player_fast_transferred(event)
   if not shared_utils.is_player_event(event) then return end
   
   local player = game.players[event.player_index]
@@ -163,8 +162,7 @@ local function on_player_fast_transferred(event)
   end
 end
 
--- Clean up sessions for disconnected players
-local function on_player_left_game(event)
+function fast_transfer_logic.on_player_left_game(event)
   local player_index = event.player_index
   
   -- Finalize any active sessions for this player
@@ -175,8 +173,7 @@ local function on_player_left_game(event)
   end
 end
 
--- Clean up sessions periodically to prevent memory leaks
-local function cleanup_old_sessions()
+function fast_transfer_logic.cleanup_old_sessions()
   local current_tick = game.tick
   -- Keep sessions alive for only 300 ticks as requested
   local timeout_ticks = 300
@@ -189,19 +186,31 @@ local function cleanup_old_sessions()
   end
 end
 
-function player_inventory_transfers.register_events(event_dispatcher)
-  -- Register the main events
-  event_dispatcher.register_handler(defines.events.on_selected_entity_changed, on_selected_entity_changed)
-  event_dispatcher.register_handler(defines.events.on_player_fast_transferred, on_player_fast_transferred)
-  
-  -- Register cleanup events
-  event_dispatcher.register_handler(defines.events.on_player_left_game, on_player_left_game)
-  
-  -- Register periodic cleanup (every 300 ticks = 5 seconds)
-  event_dispatcher.register_nth_tick_handler(300, cleanup_old_sessions)
+-- =========================
+-- Cursor Stack Logic (Placeholder)
+-- =========================
+local cursor_stack_logic = {}
+
+-- Example placeholder for future logic
+function cursor_stack_logic.on_player_cursor_stack_changed(event)
+  -- TODO: Implement cursor stack transfer logic here
 end
 
--- Initialize storage on script load
+-- =========================
+-- Registration & Module API
+-- =========================
+
+function player_inventory_transfers.register_events(event_dispatcher)
+  -- Register the fast transfer events
+  event_dispatcher.register_handler(defines.events.on_selected_entity_changed, fast_transfer_logic.on_selected_entity_changed)
+  event_dispatcher.register_handler(defines.events.on_player_fast_transferred, fast_transfer_logic.on_player_fast_transferred)
+  event_dispatcher.register_handler(defines.events.on_player_left_game, fast_transfer_logic.on_player_left_game)
+  event_dispatcher.register_nth_tick_handler(300, fast_transfer_logic.cleanup_old_sessions)
+
+  -- Register the cursor stack event (placeholder)
+  event_dispatcher.register_handler(defines.events.on_player_cursor_stack_changed, cursor_stack_logic.on_player_cursor_stack_changed)
+end
+
 function player_inventory_transfers.on_init()
   if not global.player_inventory_transfers then
     global.player_inventory_transfers = {

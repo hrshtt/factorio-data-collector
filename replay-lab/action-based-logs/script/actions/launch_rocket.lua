@@ -19,4 +19,4 @@ function launch_rocket.register_events(event_dispatcher)
   end)
 end
 
-return launch_rocket 
+return launch_rocket
