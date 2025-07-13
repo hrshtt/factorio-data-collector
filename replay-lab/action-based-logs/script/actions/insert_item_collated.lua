@@ -90,7 +90,7 @@ local function on_player_mined_item(e)
 end
 
 -- ============================================================================
--- PLAYER STATE TRACKING (same as original)
+-- PLAYER STATE TRACKING
 -- ============================================================================
 local function initialize_player_state(player_index)
   if not global.insert_item_collated_state then
@@ -106,6 +106,14 @@ local function initialize_player_state(player_index)
       cursor_became_empty_tick = nil
     }
   end
+end
+
+-- Helper function to safely get entity name
+local function get_entity_name_safe(entity)
+  if entity and entity.valid then
+    return entity.name
+  end
+  return nil
 end
 
 local function get_inventory_snapshot(inventory)
@@ -349,11 +357,13 @@ local function on_main_inventory_changed(e)
           if player_change < 0 then
             -- Player lost items, entity gained them
             transfer_type = "z_key_insert"
-            target_entity = state.selected_entity.name
+            -- Add validity check before accessing entity.name
+            target_entity = get_entity_name_safe(state.selected_entity)
           else
             -- Player gained items, entity lost them
             transfer_type = "z_key_extract"
-            target_entity = state.selected_entity.name
+            -- Add validity check before accessing entity.name
+            target_entity = get_entity_name_safe(state.selected_entity)
           end
         elseif state.open_gui_entity then
           -- GUI was open - this is likely a stack transfer or drag-drop
@@ -362,7 +372,7 @@ local function on_main_inventory_changed(e)
         elseif state.cursor_became_empty_tick and (game.tick - state.cursor_became_empty_tick) <= 2 then
           -- Cursor became empty recently (fallback for edge cases)
           transfer_type = "cursor_insert"
-          target_entity = state.selected_entity and state.selected_entity.name or nil
+          target_entity = get_entity_name_safe(state.selected_entity)
         else
           -- Some other kind of transfer - but since we filtered out the main causes,
           -- this might be a legitimate transfer we should log

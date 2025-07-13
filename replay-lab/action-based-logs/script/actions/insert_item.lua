@@ -27,6 +27,14 @@ local function initialize_player_state(player_index)
   end
 end
 
+-- Helper function to safely get entity name
+local function get_entity_name_safe(entity)
+  if entity and entity.valid then
+    return entity.name
+  end
+  return nil
+end
+
 local function get_inventory_snapshot(inventory)
   if not inventory or not inventory.valid then return {} end
   
@@ -178,11 +186,16 @@ local function on_selected_entity_changed(e)
       
       if entity_gained > 0 and entity_gained == items_removed then
         log("DEBUG: on_selected_entity_changed - logging Z-key insert")
-        log_insertion("on_selected_entity_changed", player, "z_key_insert", {
-          item = cursor_item,
-          count = items_removed,
-          target_entity = state.selected_entity.name
-        })
+        -- Add validity check before accessing entity.name
+        if state.selected_entity and state.selected_entity.valid then
+          log_insertion("on_selected_entity_changed", player, "z_key_insert", {
+            item = cursor_item,
+            count = items_removed,
+            target_entity = get_entity_name_safe(state.selected_entity)
+          })
+        else
+          log("DEBUG: on_selected_entity_changed - selected entity became invalid, skipping log")
+        end
       end
     end
   else
@@ -232,15 +245,21 @@ local function on_cursor_stack_changed(e)
       
       if entity_gained > 0 and entity_gained == items_removed then
         log("DEBUG: on_cursor_stack_changed - logging Z-key insert")
-        log_insertion("on_player_cursor_stack_changed", player, "z_key_insert", {
-          item = previous_cursor_item,
-          count = items_removed,
-          target_entity = state.selected_entity.name
-        })
+        -- Add validity check before accessing entity.name
+        if state.selected_entity and state.selected_entity.valid then
+          log_insertion("on_player_cursor_stack_changed", player, "z_key_insert", {
+            item = previous_cursor_item,
+            count = items_removed,
+            target_entity = get_entity_name_safe(state.selected_entity)
+          })
+        else
+          log("DEBUG: on_cursor_stack_changed - selected entity became invalid, skipping log")
+        end
       end
     end
   else
-    log("DEBUG: on_cursor_stack_changed - no previous cursor (" .. tostring(state.previous_cursor_stack) .. ") or selected entity (" .. tostring(state.selected_entity and state.selected_entity.name or "nil") .. ")")
+    local entity_name = get_entity_name_safe(state.selected_entity) or "nil"
+    log("DEBUG: on_cursor_stack_changed - no previous cursor (" .. tostring(state.previous_cursor_stack) .. ") or selected entity (" .. entity_name .. ")")
   end
   
   -- Track when cursor becomes empty (useful for some edge cases)
@@ -318,7 +337,8 @@ local function on_main_inventory_changed(e)
     local current_entity_snapshot = {}
     
     if state.selected_entity and state.selected_entity.valid then
-      log("DEBUG: on_main_inventory_changed - getting entity snapshot for: " .. state.selected_entity.name)
+      local entity_name = get_entity_name_safe(state.selected_entity)
+      log("DEBUG: on_main_inventory_changed - getting entity snapshot for: " .. (entity_name or "unknown"))
       current_entity_snapshot = get_entity_inventory_snapshot(state.selected_entity)
       entity_delta = compute_inventory_delta(state.selected_entity_snapshot, current_entity_snapshot)
     else
@@ -337,7 +357,8 @@ local function on_main_inventory_changed(e)
         if entity_change > 0 and player_change == -entity_change then
           log("DEBUG: on_main_inventory_changed - detected Z-key insert")
           transfer_type = "z_key_insert"
-          target_entity = state.selected_entity.name
+          -- Add validity check before accessing entity.name
+          target_entity = get_entity_name_safe(state.selected_entity)
         elseif state.open_gui_entity then
           log("DEBUG: on_main_inventory_changed - detected GUI insert")
           -- GUI was open - this is likely a stack transfer or drag-drop FROM player
@@ -347,7 +368,7 @@ local function on_main_inventory_changed(e)
           log("DEBUG: on_main_inventory_changed - detected cursor insert")
           -- Cursor became empty recently (fallback for edge cases)
           transfer_type = "cursor_insert"
-          target_entity = state.selected_entity and state.selected_entity.name or nil
+          target_entity = get_entity_name_safe(state.selected_entity)
         end
         
         -- Only log if we have a clear transfer type (no ambiguous cases)

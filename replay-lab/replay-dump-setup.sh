@@ -114,6 +114,8 @@ FACTORIO_SAVES="$HOME/Library/Application Support/factorio/saves/"
 # Create factorio saves directory if it doesn't exist
 mkdir -p "$FACTORIO_SAVES"
 
+rm -rf "$HOME/Library/Application Support/factorio/script-output/replay-logs"
+
 # Copy zip to factorio saves directory
 echo "Copying $ZIP_NAME to Factorio saves directory..."
 cp "./$ZIP_NAME" "$FACTORIO_SAVES"

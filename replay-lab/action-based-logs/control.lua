@@ -367,6 +367,14 @@ end)
 -- ============================================================================
 -- Register additional system handlers after module initialization
 function main.register_system_handlers()
+  -- Helper function for cursor logging
+  local function get_cursor_stack_info(player)
+    if not player.cursor_stack or not player.cursor_stack.valid_for_read then
+      return nil, 0
+    end
+    return player.cursor_stack.name, player.cursor_stack.count
+  end
+
   -- First-tick detection (headless or local view) + collated event processing
   event_dispatcher.register_handler(defines.events.on_tick, function(event)
     -- First tick detection for replay start
@@ -383,6 +391,24 @@ function main.register_system_handlers()
     
     -- Process collated harvest resource events
     harvest_resource_collated.process_partial_mining(event)
+    
+    -- Log cursor location every 10 ticks
+    if event.tick % 10 == 0 then
+      for player_index, player in pairs(game.players) do
+        if player.connected then
+          local cursor_item, cursor_count = get_cursor_stack_info(player)
+          local selected_entity = player.selected
+          local selected_name = selected_entity and selected_entity.name or "none"
+          local selected_pos = selected_entity and selected_entity.position and 
+                             string.format("(%.1f, %.1f)", selected_entity.position.x, selected_entity.position.y) or "none"
+          
+          log("DEBUG: TICK " .. game.tick .. " - Player " .. player_index .. 
+              " | Cursor: " .. tostring(cursor_item) .. " x" .. tostring(cursor_count) .. 
+              " | Selected: " .. tostring(selected_name) ..
+              " | At: " .. selected_pos)
+        end
+      end
+    end
   end)
 
   -- Replay end detection when player leaves
