@@ -31,7 +31,7 @@ local function create_transfer_record(player, action_type, entity, item_deltas, 
   })
   
   rec.action = action_type -- "insert_item" or "extract_item"
-  -- rec.event_name = event_name
+  rec.event_name = event_name
   rec.entity = entity.name
   rec.entity_x = string.format("%.1f", entity.position.x)
   rec.entity_y = string.format("%.1f", entity.position.y)
@@ -187,13 +187,81 @@ function fast_transfer_logic.cleanup_old_sessions()
 end
 
 -- =========================
--- Cursor Stack Logic (Placeholder)
+-- Cursor Stack Logic
 -- =========================
 local cursor_stack_logic = {}
 
--- Example placeholder for future logic
+-- Storage for tracking cursor states
+local cursor_states = {}
+
 function cursor_stack_logic.on_player_cursor_stack_changed(event)
-  -- TODO: Implement cursor stack transfer logic here
+  if not shared_utils.is_player_event(event) then return end
+  
+  local player = game.players[event.player_index]
+  if not player or not player.valid then return end
+  
+  local context = shared_utils.get_player_context(player)
+  
+  -- Get previous cursor state
+  local prev_state = cursor_states[event.player_index]
+  
+  -- Store current state
+  cursor_states[event.player_index] = {
+    cursor_item = context.cursor_item,
+    cursor_count = context.cursor_count or 0,
+    selected = context.selected,
+    selected_x = context.selected_x,
+    selected_y = context.selected_y,
+    tick = event.tick
+  }
+  
+  -- If we don't have a previous state, just return
+  if not prev_state then return end
+  
+  -- Check if we have a selected entity that's player accessible
+  local selected_entity = player.selected
+  if not selected_entity or not selected_entity.valid then return end
+  if not logistics.is_player_accessible(selected_entity) then return end
+  
+  -- Check if cursor item is the same and count decreased by exactly 1
+  if prev_state.cursor_item == context.cursor_item and
+     prev_state.cursor_item and
+     prev_state.cursor_count and context.cursor_count and
+     prev_state.cursor_count - context.cursor_count == 1 and
+     prev_state.selected == context.selected and
+     prev_state.selected_x == context.selected_x and
+     prev_state.selected_y == context.selected_y then
+    
+    -- Make sure it's an insertable item (not a building or equipment)
+    if logistics.can_be_inserted(context.cursor_item) then
+      -- Create insert_item record
+      local rec = shared_utils.create_base_record("player_inventory_transfers", {
+        name = defines.events.on_player_cursor_stack_changed,
+        tick = event.tick,
+        player_index = event.player_index
+      })
+      
+      rec.action = "insert_item"
+      rec.event_name = "on_player_cursor_stack_changed"
+      rec.entity = selected_entity.name
+      rec.entity_x = context.selected_x
+      rec.entity_y = context.selected_y
+      rec.items = {{
+        item = context.cursor_item,
+        count = 1
+      }}
+      
+      shared_utils.add_player_context_if_missing(rec, player)
+      local clean_rec = shared_utils.clean_record(rec)
+      local line = game.table_to_json(clean_rec)
+      shared_utils.buffer_event("player_inventory_transfers", line)
+    end
+  end
+end
+
+function cursor_stack_logic.on_player_left_game(event)
+  -- Clean up cursor state for player
+  cursor_states[event.player_index] = nil
 end
 
 -- =========================
@@ -207,22 +275,26 @@ function player_inventory_transfers.register_events(event_dispatcher)
   event_dispatcher.register_handler(defines.events.on_player_left_game, fast_transfer_logic.on_player_left_game)
   event_dispatcher.register_nth_tick_handler(300, fast_transfer_logic.cleanup_old_sessions)
 
-  -- Register the cursor stack event (placeholder)
+  -- Register the cursor stack events
   event_dispatcher.register_handler(defines.events.on_player_cursor_stack_changed, cursor_stack_logic.on_player_cursor_stack_changed)
+  event_dispatcher.register_handler(defines.events.on_player_left_game, cursor_stack_logic.on_player_left_game)
 end
 
 function player_inventory_transfers.on_init()
   if not global.player_inventory_transfers then
     global.player_inventory_transfers = {
-      sessions = {}
+      sessions = {},
+      cursor_states = {}
     }
   end
   sessions = global.player_inventory_transfers.sessions
+  cursor_states = global.player_inventory_transfers.cursor_states
 end
 
 function player_inventory_transfers.on_load()
   if global.player_inventory_transfers then
     sessions = global.player_inventory_transfers.sessions
+    cursor_states = global.player_inventory_transfers.cursor_states
   end
 end
 
