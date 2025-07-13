@@ -1,9 +1,10 @@
 --@insert_item_collated.lua
---@description Collated item transfer action logger with filtering
+--@description Player-to-entity item transfer logger with filtering and enhanced cursor tracking
 --@author Harshit Sharma
---@version 1.0.0
+--@version 1.2.0
 --@date 2025-01-27
---@note Filters out inventory changes caused by crafting, building, and mining to prevent duplicate logs
+--@note Logs only transfers FROM player TO entities, filtering out crafting/building/mining and player-gain events.
+--@note Enhanced cursor tracking detects insert operations that don't empty the cursor stack.
 
 local insert_item_collated = {}
 local shared_utils = require("script.shared-utils")
@@ -32,6 +33,7 @@ local function initialize_exclusion_tracking()
       mining_players = {},        -- Players who are mining
       fast_transfer_players = {}, -- Players who did fast transfers
       drop_players = {},          -- Players who dropped items
+      cursor_insert_players = {}, -- Players who did cursor-based inserts
       robot_building = false      -- Whether robots are building
     }
   end
@@ -92,6 +94,17 @@ end
 -- ============================================================================
 -- PLAYER STATE TRACKING (same as original)
 -- ============================================================================
+local function has_inventory(entity)
+  if not entity or not entity.valid then return false end
+  
+  for _, index in pairs(defines.inventory) do
+    if entity.get_inventory(index) then
+      return true
+    end
+  end
+  return false
+end
+
 local function initialize_player_state(player_index)
   if not global.insert_item_collated_state then
     global.insert_item_collated_state = {}
@@ -103,7 +116,13 @@ local function initialize_player_state(player_index)
       open_gui_entity = nil,
       selected_entity = nil,
       selected_entity_snapshot = {},
-      cursor_became_empty_tick = nil
+      cursor_became_empty_tick = nil,
+      cursor_decreased_tick = nil,
+      cursor_decreased_item = nil,
+      cursor_decreased_amount = nil,
+      cursor_changed_item_tick = nil,
+      cursor_previous_item = nil,
+      cursor_previous_count = nil
     }
   end
 end
@@ -194,9 +213,14 @@ end
 -- MAIN EVENT HANDLERS
 -- ============================================================================
 
--- 1. Fast transfer (Ctrl/Shift + Click with GUI closed) - always log these
+-- 1. Fast transfer (Ctrl/Shift + Click with GUI closed) - only log TO entity transfers
 local function on_fast_transferred(e)
   if not shared_utils.is_player_event(e) then return end
+  
+  -- Only log transfers FROM player TO entity
+  if not e.from_player then
+    return -- Skip transfers FROM entity TO player
+  end
   
   -- Mark this as an explicit log to prevent diff-based duplicate
   initialize_exclusion_tracking()
@@ -205,16 +229,16 @@ local function on_fast_transferred(e)
   global.last_explicit_log_tick[e.player_index] = game.tick
   
   local player = game.players[e.player_index]
-  local transfer_type = e.from_player and "fast_transfer_to_entity" or "fast_transfer_from_entity"
+  local transfer_type = "fast_transfer_to_entity" -- Always this since we filtered out from_entity
   
   log_transfer("on_player_fast_transferred", player, transfer_type, {
     entity = e.entity and e.entity.name or nil,
     is_split = e.is_split,
-    from_player = e.from_player
+    from_player = true -- Always true since we filtered out false
   })
 end
 
--- 2. Drop to ground (Z key over empty space) - always log these
+-- 2. Drop to ground (Z key over empty space) - always log these (FROM player TO ground)
 local function on_dropped_item(e)
   if not shared_utils.is_player_event(e) then return end
   
@@ -241,12 +265,22 @@ local function on_selected_entity_changed(e)
   initialize_player_state(e.player_index)
   local state = global.insert_item_collated_state[e.player_index]
   
-  -- Store the selected entity and its inventory snapshot
-  state.selected_entity = e.last_entity
-  if e.last_entity and e.last_entity.valid then
+  -- Only track entities that have inventories
+  if e.last_entity and e.last_entity.valid and has_inventory(e.last_entity) then
+    -- Store the selected entity and its inventory snapshot
+    state.selected_entity = e.last_entity
     state.selected_entity_snapshot = get_entity_inventory_snapshot(e.last_entity)
-  else
-    state.selected_entity_snapshot = {}
+    
+    -- Safely get entity info for logging
+    local entity_name = e.last_entity.name
+    local entity_position = "nil"
+    if e.last_entity.valid then
+      entity_position = e.last_entity.position.x .. "," .. e.last_entity.position.y
+    end
+    
+    log("TICK: " .. game.tick .. " selected_entity_changed: " .. entity_name .. " entity position: " .. entity_position)
+  -- else
+    -- state.selected_entity_snapshot = {}
   end
 end
 
@@ -260,9 +294,77 @@ local function on_cursor_stack_changed(e)
   local state = global.insert_item_collated_state[e.player_index]
   local cursor_item, cursor_count = get_cursor_stack_info(player)
   
-  -- Track when cursor becomes empty (useful for some edge cases)
-  if not cursor_item and state.previous_cursor_stack then
-    state.cursor_became_empty_tick = game.tick
+  -- Track cursor changes more comprehensively
+  if state.previous_cursor_stack then
+    local prev_item = state.previous_cursor_stack.name
+    local prev_count = state.previous_cursor_stack.count
+    
+    -- Track when cursor becomes empty (useful for some edge cases)
+    if not cursor_item and prev_item then
+      state.cursor_became_empty_tick = game.tick
+    end
+    
+    -- Track when cursor count decreases (potential insert operation)
+    if cursor_item and prev_item and cursor_item == prev_item and cursor_count < prev_count then
+      state.cursor_decreased_tick = game.tick
+      state.cursor_decreased_item = cursor_item
+      state.cursor_decreased_amount = prev_count - cursor_count
+      
+      -- Mark this as a cursor-based operation to prevent duplicate logging
+      initialize_exclusion_tracking()
+      local exclusions = global.insert_item_collated_exclusions[game.tick]
+      exclusions.cursor_insert_players[e.player_index] = true
+      global.last_explicit_log_tick[e.player_index] = game.tick
+      
+      -- Safely get entity info
+      local target_entity_name = nil
+      local entity_position = nil
+      if state.selected_entity and state.selected_entity.valid then
+        target_entity_name = state.selected_entity.name
+        entity_position = state.selected_entity.position.x .. "," .. state.selected_entity.position.y
+      end
+      
+      -- Log the cursor-based insert operation directly
+      log_transfer("on_player_cursor_stack_changed", player, "cursor_insert", {
+        item = cursor_item,
+        count = prev_count - cursor_count,
+        direction = "from_player",
+        target_entity = target_entity_name,
+        entity_position = entity_position,
+        cursor_operation = "decreased"
+      })
+    end
+    
+    -- Track when cursor changes items (potential insert operation)
+    if cursor_item and prev_item and cursor_item ~= prev_item then
+      state.cursor_changed_item_tick = game.tick
+      state.cursor_previous_item = prev_item
+      state.cursor_previous_count = prev_count
+      
+      -- Mark this as a cursor-based operation to prevent duplicate logging
+      initialize_exclusion_tracking()
+      local exclusions = global.insert_item_collated_exclusions[game.tick]
+      exclusions.cursor_insert_players[e.player_index] = true
+      global.last_explicit_log_tick[e.player_index] = game.tick
+      
+      -- Safely get entity info
+      local target_entity_name = nil
+      local entity_position = nil
+      if state.selected_entity and state.selected_entity.valid then
+        target_entity_name = state.selected_entity.name
+        entity_position = state.selected_entity.position.x .. "," .. state.selected_entity.position.y
+      end
+      
+      -- Log the cursor-based insert operation directly
+      log_transfer("on_player_cursor_stack_changed", player, "cursor_insert", {
+        item = prev_item,
+        count = prev_count,
+        direction = "from_player",
+        target_entity = target_entity_name,
+        entity_position = entity_position,
+        cursor_operation = "changed"
+      })
+    end
   end
   
   state.previous_cursor_stack = cursor_item and {name = cursor_item, count = cursor_count} or nil
@@ -300,6 +402,7 @@ local function on_main_inventory_changed(e)
      exclusions.mining_players[e.player_index] or
      exclusions.fast_transfer_players[e.player_index] or
      exclusions.drop_players[e.player_index] or
+     exclusions.cursor_insert_players[e.player_index] or
      exclusions.robot_building then
     return
   end
@@ -344,37 +447,68 @@ local function on_main_inventory_changed(e)
         local transfer_type = "unknown_transfer"
         local target_entity = nil
         
+        -- Check for cursor-based insert operations first (most reliable)
+        if state.cursor_decreased_tick and (game.tick - state.cursor_decreased_tick) <= 2 and 
+           state.cursor_decreased_item == item and player_change < 0 then
+          -- Cursor decreased for this item and player lost items - likely an insert
+          transfer_type = "cursor_insert"
+          target_entity = state.selected_entity and state.selected_entity.valid and state.selected_entity.name or nil
+        elseif state.cursor_changed_item_tick and (game.tick - state.cursor_changed_item_tick) <= 2 and 
+               state.cursor_previous_item == item and player_change < 0 then
+          -- Cursor changed from this item and player lost items - likely an insert
+          transfer_type = "cursor_insert"
+          target_entity = state.selected_entity and state.selected_entity.valid and state.selected_entity.name or nil
         -- Check if this is a Z-key insert/extract (player delta negates entity delta)
-        if entity_change ~= 0 and player_change == -entity_change then
+        elseif entity_change ~= 0 and player_change == -entity_change then
           if player_change < 0 then
-            -- Player lost items, entity gained them
+            -- Player lost items, entity gained them - THIS IS WHAT WE WANT
             transfer_type = "z_key_insert"
-            target_entity = state.selected_entity.name
+            target_entity = state.selected_entity and state.selected_entity.valid and state.selected_entity.name or nil
           else
-            -- Player gained items, entity lost them
-            transfer_type = "z_key_extract"
-            target_entity = state.selected_entity.name
+            -- Player gained items, entity lost them - SKIP THIS
+            goto continue -- Skip this event
           end
         elseif state.open_gui_entity then
           -- GUI was open - this is likely a stack transfer or drag-drop
-          transfer_type = "gui_transfer"
-          target_entity = state.open_gui_entity
+          -- We need to determine direction based on player_change
+          if player_change < 0 then
+            -- Player lost items - THIS IS WHAT WE WANT
+            transfer_type = "gui_transfer"
+            target_entity = state.open_gui_entity
+          else
+            -- Player gained items - SKIP THIS
+            goto continue -- Skip this event
+          end
         elseif state.cursor_became_empty_tick and (game.tick - state.cursor_became_empty_tick) <= 2 then
           -- Cursor became empty recently (fallback for edge cases)
-          transfer_type = "cursor_insert"
-          target_entity = state.selected_entity and state.selected_entity.name or nil
+          -- Only log if player lost items
+          if player_change < 0 then
+            transfer_type = "cursor_insert"
+            target_entity = state.selected_entity and state.selected_entity.valid and state.selected_entity.name or nil
+          else
+            -- Player gained items - SKIP THIS
+            goto continue -- Skip this event
+          end
         else
           -- Some other kind of transfer - but since we filtered out the main causes,
           -- this might be a legitimate transfer we should log
-          transfer_type = "inventory_change"
+          -- Only log if player lost items
+          if player_change < 0 then
+            transfer_type = "inventory_change"
+          else
+            -- Player gained items - SKIP THIS
+            goto continue -- Skip this event
+          end
         end
         
         log_transfer("on_player_main_inventory_changed", player, transfer_type, {
           item = item,
           count = math.abs(player_change),
-          direction = player_change > 0 and "to_player" or "from_player",
+          direction = "from_player", -- Always "from_player" since we filtered out "to_player"
           target_entity = target_entity
         })
+        
+        ::continue::
       end
     end
     
