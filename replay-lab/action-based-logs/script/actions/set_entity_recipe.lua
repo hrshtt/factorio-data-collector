@@ -16,7 +16,7 @@ function set_entity_recipe.register_events(event_dispatcher)
   local function is_production_machine(entity)
     if not entity or not entity.valid then return false end
     local t = entity.type
-    return t == "assembling-machine" or t == "furnace" or t == "oil-refinery" or t == "chemical-plant"
+    return t == "assembling-machine" or t == "oil-refinery" or t == "chemical-plant"
   end
 
   -- Handler for GUI opened
@@ -60,8 +60,37 @@ function set_entity_recipe.register_events(event_dispatcher)
     global.set_entity_recipe_state[player_index] = nil
   end
 
+  -- Handler for entity settings pasted (recipe copy)
+  local function on_entity_settings_pasted(e)
+    if not shared_utils.is_player_event(e) then return end
+    local src = e.source
+    local dst = e.destination
+    if not (src and src.valid and dst and dst.valid) then return end
+    if not (is_production_machine(src) and is_production_machine(dst)) then return end
+    local src_recipe = src.get_recipe()
+    local dst_recipe = dst.get_recipe()
+    local src_recipe_name = src_recipe and src_recipe.name or nil
+    local dst_recipe_name = dst_recipe and dst_recipe.name or nil
+    -- Only log if the recipe is actually being changed or set
+    if src_recipe_name ~= dst_recipe_name then
+      local rec = shared_utils.create_base_record("set_entity_recipe", e)
+      rec.action = "set_entity_recipe"
+      rec.entity = dst.name
+      rec.entity_type = dst.type
+      rec.old_recipe = dst_recipe_name -- before paste
+      rec.new_recipe = src_recipe_name -- after paste
+      rec.paste_source_entity = src.name
+      rec.paste_source_entity_type = src.type
+      shared_utils.add_player_context_if_missing(rec, game.players[e.player_index])
+      local clean_rec = shared_utils.clean_record(rec)
+      local line = game.table_to_json(clean_rec)
+      shared_utils.buffer_event("set_entity_recipe", line)
+    end
+  end
+
   event_dispatcher.register_handler(defines.events.on_gui_opened, on_gui_opened)
   event_dispatcher.register_handler(defines.events.on_gui_closed, on_gui_closed)
+  event_dispatcher.register_handler(defines.events.on_entity_settings_pasted, on_entity_settings_pasted)
 end
 
 return set_entity_recipe
