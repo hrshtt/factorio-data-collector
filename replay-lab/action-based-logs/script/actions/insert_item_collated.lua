@@ -270,7 +270,7 @@ local function on_selected_entity_changed(e)
     -- Store the selected entity and its inventory snapshot
     state.selected_entity = e.last_entity
     state.selected_entity_snapshot = get_entity_inventory_snapshot(e.last_entity)
-    log("TICK: " .. game.tick .. " selected_entity_changed: " .. (e.last_entity and e.last_entity.name or "nil") .. " entity position: " .. (e.last_entity and e.last_entity.position.x .. "," .. e.last_entity.position.y or "nil"))
+    log("TICK: " .. game.tick .. " selected_entity_changed: " .. (e.last_entity and e.last_entity.name or "nil") .. " entity position: " .. (e.last_entity and e.last_entity.valid and e.last_entity.position.x .. "," .. e.last_entity.position.y or "nil"))
   -- else
     -- state.selected_entity_snapshot = {}
   end
@@ -314,7 +314,7 @@ local function on_cursor_stack_changed(e)
         count = prev_count - cursor_count,
         direction = "from_player",
         target_entity = state.selected_entity and state.selected_entity.name or nil,
-        entity_position = state.selected_entity and state.selected_entity.position.x .. "," .. state.selected_entity.position.y or nil,
+        entity_position = state.selected_entity and state.selected_entity.valid and state.selected_entity.position.x .. "," .. state.selected_entity.position.y or nil,
         cursor_operation = "decreased"
       })
     end
@@ -337,6 +337,7 @@ local function on_cursor_stack_changed(e)
         count = prev_count,
         direction = "from_player",
         target_entity = state.selected_entity and state.selected_entity.name or nil,
+        entity_position = state.selected_entity and state.selected_entity.valid and state.selected_entity.position.x .. "," .. state.selected_entity.position.y or nil,
         cursor_operation = "changed"
       })
     end
