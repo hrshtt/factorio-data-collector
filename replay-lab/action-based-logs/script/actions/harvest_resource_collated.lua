@@ -17,6 +17,50 @@ local function key(event)     return event.player_index .. ":" .. event.tick end
 local function round(value)   return string.format("%.1f", value) end
 
 --------------------------------------------------------------------
+-- MINING DURATION CALCULATION
+--------------------------------------------------------------------
+local function calculate_mining_duration_ticks(entity, player)
+  if not (entity and entity.valid and player and player.valid) then
+    return 0
+  end
+  
+  -- Get the entity's base mining time (in seconds)
+  local mining_time_seconds = 0.5 -- Default mining time
+  if entity.prototype and entity.prototype.mineable_properties then
+    mining_time_seconds = entity.prototype.mineable_properties.mining_time or 0.5
+  end
+  
+  -- Get player's base mining speed from character prototype
+  local base_mining_speed = 1.0 -- Default base mining speed
+  if player.character and player.character.valid and player.character.prototype then
+    base_mining_speed = player.character.prototype.mining_speed or 1.0
+  end
+  
+  -- Get force mining speed modifier
+  local force_mining_modifier = 0.0
+  if player.force and player.force.valid then
+    force_mining_modifier = player.force.manual_mining_speed_modifier or 0.0
+  end
+  
+  -- Get character mining speed modifier
+  local character_mining_modifier = 0.0
+  if player.character_mining_speed_modifier then
+    character_mining_modifier = player.character_mining_speed_modifier
+  end
+  
+  -- Calculate final mining speed: base_speed * (1 + force_modifier) * (1 + character_modifier)
+  local final_mining_speed = base_mining_speed * (1 + force_mining_modifier) * (1 + character_mining_modifier)
+  
+  -- Calculate actual mining duration: mining_time / mining_speed
+  local duration_seconds = mining_time_seconds / final_mining_speed
+  
+  -- Convert to ticks (60 ticks per second)
+  local duration_ticks = math.ceil(duration_seconds * 60)
+  
+  return duration_ticks
+end
+
+--------------------------------------------------------------------
 -- TICK HANDLER FOR COLLATION
 --------------------------------------------------------------------
 local function process_partial_mining(event)
@@ -37,6 +81,15 @@ local function process_partial_mining(event)
       -- Mark empty item lists as potentially cancelled
       if #mining_record.items == 0 then
         mining_record.status = mining_record.status or "no_items_received"
+      end
+      
+      -- Calculate duration: use calculated duration if available, otherwise fall back to tick difference
+      if mining_record.calculated_duration_ticks then
+        mining_record.duration_ticks = mining_record.calculated_duration_ticks
+      elseif mining_record.end_tick then
+        mining_record.duration_ticks = mining_record.end_tick - mining_record.start_tick
+      else
+        mining_record.duration_ticks = 0
       end
       
       local line = game.table_to_json(mining_record)
@@ -63,6 +116,10 @@ function harvest_module.register_events(event_dispatcher)
       pos_y = round(event.entity.position.y)
     end
 
+    -- Calculate the actual mining duration
+    local player = game.players[event.player_index]
+    local calculated_duration = calculate_mining_duration_ticks(event.entity, player)
+
     global.partial_mine[key(event)] = {
       tick         = event.tick,
       player_index = event.player_index,
@@ -70,7 +127,9 @@ function harvest_module.register_events(event_dispatcher)
       entity       = entity_name,
       x            = pos_x,
       y            = pos_y,
-      items        = {}                               -- will be filled below
+      start_tick   = event.tick,                  -- Start tick is when pre-mining begins
+      calculated_duration_ticks = calculated_duration, -- Store calculated duration
+      items        = {}                           -- will be filled below
     }
   end)
 
@@ -103,6 +162,7 @@ function harvest_module.register_events(event_dispatcher)
     if mining_record then
       mining_record.entity_mined = true
       mining_record.entity_type = event.entity and event.entity.type
+      mining_record.end_tick = event.tick  -- Mark the actual completion tick
     end
   end)
 
@@ -118,7 +178,10 @@ function harvest_module.register_events(event_dispatcher)
       player_index = event.player_index,
       action = "harvest_resource_collated",
       type = "tile",
-      tiles = event.tiles or {}
+      tiles = event.tiles or {},
+      start_tick = event.tick,  -- For tiles, start and end are the same
+      end_tick = event.tick,
+      duration_ticks = 0
     }
     local line = game.table_to_json(rec)
     util.buffer_event("harvest_resource_collated", line)

@@ -15,6 +15,7 @@ function rotate_entity.register_events(event_dispatcher)
     rec.action = "rotate_entity"
     rec.entity = e.entity and e.entity.name or nil
     rec.previous_direction = e.previous_direction
+    rec.new_direction = e.entity and e.entity.valid and e.entity.direction or nil
     shared_utils.add_player_context_if_missing(rec, player)
     local clean_rec = shared_utils.clean_record(rec)
     local line = game.table_to_json(clean_rec)
