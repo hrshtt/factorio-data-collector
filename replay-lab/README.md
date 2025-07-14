@@ -1,15 +1,36 @@
 # Factorio Replay Analysis Tool
 
-A specialized module for extracting comprehensive player actions and game events from Factorio replay files into categorized JSONL logs for detailed behavioral analysis.
+A specialized module for extracting comprehensive player actions and game events from Factorio replay files into structured JSONL logs for detailed behavioral analysis.
 
 ## What This Module Does
 
-This tool transforms Factorio replay files into structured event data by:
-- **Category-based logging**: Events split into focused categories (movement, logistics, construction, GUI, etc.)
-- **Inventory state-diff tracking**: Deterministic inventory change detection using before/after snapshots
-- **State-driven construction tracking**: Context-aware construction logging with blueprint session management
-- **Periodic world snapshots**: Complete item counts across all entities every N ticks
-- **Modular architecture**: Specialized Lua modules for different event types
+This tool transforms Factorio replay files into structured event data using **four different logging approaches**:
+
+### 1. **Action-Based Logging** (Default - FLE Compatible)
+- **Semantic actions** designed for compatibility with [factorio-learning-environment](https://github.com/JackHopkins/factorio-learning-environment)
+- High-level action abstractions: `craft_item_collated`, `place_entity`, `harvest_resource_collated`, `move_to_collated`
+- Session-aware action grouping (e.g., collated crafting sessions)
+- Observation actions: `get_entities`, `get_research_progress`, `inspect_inventory`
+- **Use case**: Machine learning research, agent training, behavioral modeling
+
+### 2. **Simple Category-Based Logging**
+- Events split into focused categories: `movement`, `logistics`, `construction`, `gui`
+- **Inventory state-diff tracking**: Deterministic inventory change detection
+- **State-driven construction tracking**: Context-aware building with blueprint sessions
+- **Periodic world snapshots**: Complete item counts every N ticks
+- **Use case**: Human behavior analysis, gameplay pattern studies
+
+### 3. **State-Based Domain Logging**
+- **Domain-focused modules**: `map`, `entity`, `player`, `player_inventory`, `research`
+- Pure state mutations tracked per domain
+- Cross-domain event correlation
+- **Use case**: Game state analysis, progression tracking, research studies
+
+### 4. **Raw Event Logging**
+- **Complete Factorio 1.1.110 event stream**: All game events logged as-is
+- Minimal processing overhead
+- Comprehensive event coverage with full context
+- **Use case**: Low-level game engine analysis, debugging, complete data capture
 
 ## Architecture Overview
 
@@ -56,14 +77,39 @@ Download or copy Factorio saves to the `../saves/` directory:
     └── ...
 ```
 
-### 2. Setup Logging for a Save
+### 2. Choose Your Logging Type
+
+Select the appropriate logger based on your analysis needs:
+
+| Logger Type | Best For | Output Files | File Size | Processing |
+|-------------|----------|--------------|-----------|------------|
+| **action** (default) | AI/ML research, agent training | 13+ semantic action files | Medium | High-level abstractions |
+| **simple** | Human behavior analysis | 5 category files + snapshots | Large | Category-focused |
+| **state** | Game state research | 5 domain files | Medium | Domain-focused |
+| **raw** | Complete data capture, debugging | 1 comprehensive file | Very Large | Minimal |
 
 ```bash
-./replay-dump-setup.sh ../saves/your_save_name
+# Action-based logging (default) - FLE compatible semantic actions
+./replay-dump-setup.sh ../saves/your_save_name action
+
+# Simple category-based logging - human behavior analysis
+./replay-dump-setup.sh ../saves/your_save_name simple
+
+# State-based domain logging - game state analysis  
+./replay-dump-setup.sh ../saves/your_save_name state
+
+# Raw event logging - complete event stream
+./replay-dump-setup.sh ../saves/your_save_name raw
 ```
 
+#### Choosing Guidelines:
+- **Use `action`** for machine learning research, especially if working with [factorio-learning-environment](https://github.com/deepmind/lab2d/tree/main/dmlab2d/environments/factorio)
+- **Use `simple`** for analyzing human gameplay patterns and behaviors
+- **Use `state`** for studying game progression and state transitions  
+- **Use `raw`** when you need complete event data or are unsure what you'll analyze
+
 This script:
-- Copies all modular logging scripts to your save directory
+- Copies the selected logging scripts to your save directory
 - Zips the save with proper structure
 - Copies to Factorio's saves directory (`~/Library/Application Support/factorio/saves/`)
 
@@ -74,16 +120,53 @@ This script:
 3. Click play icon to start replay
 4. **Speed up to 64x** for faster logging
 
-The replay automatically logs to categorized files:
+The replay automatically logs to different files based on the selected logger type:
+
+#### Action-Based Logging Output (FLE Compatible)
 ```
 ~/Library/Application Support/factorio/script-output/replay-logs/
-├── core-meta.jsonl
-├── movement.jsonl
-├── logistics.jsonl
-├── construction.jsonl
-├── gui.jsonl
-├── snapshot.jsonl
-└── snapshot-*.json
+├── craft_item_collated.jsonl        # Collated crafting sessions
+├── harvest_resource_collated.jsonl  # Resource mining sessions  
+├── place_entity.jsonl               # Entity placement actions
+├── pickup_entity.jsonl              # Entity removal actions
+├── rotate_entity.jsonl              # Entity rotation actions
+├── move_to_collated.jsonl           # Movement actions with pathfinding
+├── set_entity_recipe.jsonl          # Machine recipe configuration
+├── set_research.jsonl               # Technology research changes
+├── launch_rocket.jsonl              # Rocket launches
+├── send_message.jsonl               # Chat messages
+├── player_inventory_transfers.jsonl # Inventory management
+├── get_entities.jsonl               # Entity observations
+├── get_research_progress.jsonl      # Research state observations
+└── score.jsonl                      # Game score tracking
+```
+
+#### Simple Category-Based Logging Output  
+```
+~/Library/Application Support/factorio/script-output/replay-logs/
+├── core-meta.jsonl     # Player join/leave events
+├── movement.jsonl      # Player movement tracking
+├── logistics.jsonl     # Inventory changes and transfers
+├── construction.jsonl  # Building placement/removal
+├── gui.jsonl          # Interface interactions
+├── snapshot.jsonl     # Periodic world state snapshots
+└── snapshot-*.json    # Detailed snapshot files
+```
+
+#### State-Based Domain Logging Output
+```
+~/Library/Application Support/factorio/script-output/replay-logs/
+├── map.jsonl            # Map-related events
+├── entity.jsonl         # Entity state changes
+├── player.jsonl         # Player actions and state
+├── player_inventory.jsonl # Player inventory changes
+└── research.jsonl       # Research progression
+```
+
+#### Raw Event Logging Output
+```
+~/Library/Application Support/factorio/script-output/replay-logs/
+└── raw_events.jsonl     # Complete Factorio event stream
 ```
 
 ### 4. Copy Replay Data
@@ -98,30 +181,66 @@ The replay automatically logs to categorized files:
 
 This copies the logged data to `../factorio_replays/replay-logs/` for analysis.
 
-## Event Categories Detail
+## Logger Type Details
 
-### Movement (`movement.jsonl`)
-Tracks player position changes and movement patterns:
+### Action-Based Logging (FLE Compatible)
+
+Designed for compatibility with [factorio-learning-environment](https://github.com/deepmind/lab2d/tree/main/dmlab2d/environments/factorio), providing semantic action abstractions:
+
+#### Collated Actions
+**`craft_item_collated.jsonl`** - Groups crafting into sessions:
+```json
+{
+  "tick": 5678,
+  "action": "craft_item_collated", 
+  "recipe": "iron-plate",
+  "start_tick": 1234,
+  "end_tick": 5678,
+  "duration_ticks": 4444,
+  "total_queued": 50,
+  "total_crafted": 50,
+  "total_cancelled": 0
+}
+```
+
+**`move_to_collated.jsonl`** - Movement with pathfinding context:
+```json
+{
+  "tick": 1234,
+  "action": "move_to_collated",
+  "start_position": {"x": 10.0, "y": 5.0},
+  "end_position": {"x": 15.5, "y": 8.2},
+  "path_length": 7.2,
+  "movement_type": "walk"
+}
+```
+
+#### Observation Actions
+**`get_entities.jsonl`** - Entity queries for AI observation:
+```json
+{
+  "tick": 1234,
+  "action": "get_entities",
+  "area": {"left_top": {"x": 0, "y": 0}, "right_bottom": {"x": 32, "y": 32}},
+  "filter": "all"
+}
+```
+
+### Simple Category-Based Logging
+
+Traditional event categorization for human behavior analysis:
+
+**`movement.jsonl`** - Player position tracking:
 ```json
 {
   "tick": 1234,
   "player": 1,
   "position": {"x": 12.5, "y": 8.0},
-  "context": {
-    "action": "walk",
-    "direction": "north"
-  }
+  "context": {"action": "walk", "direction": "north"}
 }
 ```
 
-### Logistics (`logistics.jsonl`)
-Unified inventory change detection with single `log_inventory_change()` function:
-- GUI diff listener for manual transfers (drag, drop, arrow buttons)
-- Direct event logging for fast-transfers, crafting, mining, building
-- One log entry per item type per change (no double-logging)
-- Context tracking prevents missed transfers
-
-Example logistics event:
+**`logistics.jsonl`** - Inventory change detection:
 ```json
 {
   "tick": 1234,
@@ -129,93 +248,124 @@ Example logistics event:
   "item": "iron-plate",
   "delta": -50,
   "source": "player",
-  "destination": "iron-chest",
-  "context": {
-    "action": "gui_transfer",
-    "entity": "iron-chest",
-    "position": {"x": 12.5, "y": 8.0}
-  }
+  "destination": "iron-chest"
 }
 ```
 
-### Construction (`construction.jsonl`)
-State-driven approach with context tracking:
-- Entity placement and removal with context
-- Mining operations
-- Blueprint creation and deployment with session tracking
-- Building rotations and configurations
-- Equipment placement/removal
-- Context-aware action logging (build zones, blueprint sessions, etc.)
+### State-Based Domain Logging
 
-Example construction event:
+Domain-focused event tracking for state analysis:
+
+**`entity.jsonl`** - Entity state mutations:
 ```json
 {
   "tick": 1234,
-  "player": 1,
-  "action": "build",
-  "entity": "assembling-machine-1",
-  "context": {
-    "action": "build",
-    "entity": "assembling-machine-1",
-    "position": {"x": 12.5, "y": 8.0},
-    "from_blueprint": true,
-    "blueprint_digest": "0eNpdy9EKgz..."
-  }
+  "domain": "entity",
+  "event": "on_built_entity",
+  "entity_name": "assembling-machine-1",
+  "position": {"x": 12.5, "y": 8.0}
 }
 ```
 
-### GUI (`gui.jsonl`)
-Interface interactions and menu usage:
-- Interface interactions
-- Menu opening/closing
-- Inventory panel usage
-- Settings changes
+### Raw Event Logging
 
-### Snapshots (`snapshot.jsonl` + `snapshot-*.json`)
-Complete world state every N ticks (default: 100,000 ≈ 28 minutes):
-- All player inventories
-- All entity inventories (chests, machines, etc.)
-- Items on ground
-- Fluid storage
+Complete Factorio event stream with minimal processing:
+
+**`raw_events.jsonl`** - All game events:
+```json
+{
+  "tick": 1234,
+  "event_name": "on_built_entity",
+  "player_index": 1,
+  "entity": {...},
+  "raw_data": {...}
+}
+```
 
 ## Module File Structure
 
 ```
 replay-lab/
-├── lua-scripts/                    # Modular logging system
-│   ├── control.lua                # Main controller and event routing
-│   ├── shared-utils.lua           # Common utilities and helpers
-│   ├── movement.lua               # Movement tracking module
-│   ├── logistics.lua              # Inventory & transfer tracking
-│   ├── construction.lua           # Building operations module
-│   ├── gui.lua                    # Interface interaction tracking
-│   ├── snapshot.lua               # World state snapshots
-│   └── tick_overlay.lua           # Debug overlay (optional)
-├── replay-dump-setup.sh       # Automated save setup
-├── replay-dump-setup.sh                 # Data extraction utility
-└── README.md                      # This documentation
+├── action-based-logs/             # FLE-compatible semantic actions
+│   ├── control.lua               # Action dispatcher and collation
+│   └── script/
+│       ├── shared-utils.lua      # Common utilities
+│       ├── actions/              # Individual action modules
+│       │   ├── craft_item_collated.lua
+│       │   ├── place_entity.lua
+│       │   ├── move_to_collated.lua
+│       │   ├── get_entities.lua
+│       │   └── ... (many action types)
+│       └── tick_overlay.lua      # Debug overlay
+├── simple-logs/                  # Category-based logging
+│   ├── control.lua               # Event dispatcher
+│   └── script/
+│       ├── shared-utils.lua      # Common utilities  
+│       ├── movement.lua          # Movement tracking
+│       ├── logistics.lua         # Inventory changes
+│       ├── construction.lua      # Building operations
+│       ├── gui.lua              # Interface interactions
+│       ├── snapshot.lua         # World state snapshots
+│       └── tick_overlay.lua     # Debug overlay
+├── state-based-logs/             # Domain-focused logging
+│   ├── control.lua               # Domain dispatcher
+│   └── script/
+│       ├── shared-utils.lua      # Common utilities
+│       ├── map.lua               # Map domain events
+│       ├── entity.lua            # Entity domain events
+│       ├── player.lua            # Player domain events
+│       ├── player_inventory.lua  # Inventory domain events
+│       ├── research.lua          # Research domain events
+│       └── tick_overlay.lua      # Debug overlay
+├── raw-logs/                     # Complete event logging
+│   ├── control.lua               # Raw event dispatcher
+│   └── script/
+│       ├── shared-utils.lua      # Common utilities
+│       └── tick_overlay.lua      # Debug overlay
+├── replay-dump-setup.sh          # Logger setup script
+├── replay-dump-copy.sh           # Data extraction utility
+└── README.md                     # This documentation
 ```
 
 ## Configuration
 
-### Snapshot Frequency
-Modify `SNAPSHOT_INTERVAL` in `snapshot.lua`:
+All logging types share common configuration options that can be modified in their respective `control.lua` files:
+
+### Buffer Settings (All Loggers)
+Adjust flush frequency to control memory usage vs. disk I/O:
 ```lua
-local SNAPSHOT_INTERVAL = 100000  -- Every ~28 minutes at 60 UPS
+-- In any control.lua
+local FLUSH_EVERY = 600  -- Every 10 seconds at 60 UPS (default)
+local FLUSH_EVERY = 300  -- More frequent for memory-constrained systems
+local FLUSH_EVERY = 1200 -- Less frequent for high-performance systems
 ```
 
-### Buffer Settings
-Adjust flush frequency in `control.lua`:
+### Logger-Specific Configuration
+
+#### Action-Based Logging
+Configure collation timeouts and session management:
 ```lua
-local FLUSH_EVERY = 600  -- Every 10 seconds at 60 UPS
+-- In action-based-logs/script/actions/craft_item_collated.lua  
+local COLLATION_TIMEOUT_TICKS = 600  -- 10 seconds timeout
+local MAX_SESSION_GAP_TICKS = 300    -- 5 seconds max gap
 ```
 
-### Memory Management
-Configure memory limits and cleanup:
+#### Simple Category-Based Logging  
+Configure snapshot frequency and memory limits:
 ```lua
--- In control.lua
-local MAX_INVENTORY_SNAPSHOTS = 1000
-local MAX_CONSTRUCTION_CONTEXTS = 500
+-- In simple-logs/script/snapshot.lua
+local SNAPSHOT_INTERVAL = 100000     -- Every ~28 minutes at 60 UPS
+local MAX_INVENTORY_SNAPSHOTS = 1000 -- Memory cleanup threshold
+```
+
+#### Raw Event Logging
+Configure event filtering to reduce file size:
+```lua
+-- In raw-logs/control.lua
+local EXCLUDE_EVENTS = {
+  [defines.events.on_tick] = true,           -- Skip high-frequency events
+  [defines.events.on_gui_hover] = true,      -- Skip mouse hover events
+}
 ```
 
 ## Performance and Memory Management
@@ -269,7 +419,7 @@ local MAX_CONSTRUCTION_CONTEXTS = 500
 
 4. **Incomplete logging**: Verify save directory structure
    ```bash
-   ./replay-dump-setup.sh ../saves/your_save_name --verbose
+   ./replay-dump-setup.sh ../saves/your_save_name
    ```
 
 ### Debug Options
