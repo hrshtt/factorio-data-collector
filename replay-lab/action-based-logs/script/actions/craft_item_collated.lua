@@ -16,7 +16,7 @@ local function get_session_key(player_index, recipe_name)
 end
 
 -- Helper function to create a collated record
-local function create_collated_record(player, recipe_name, start_tick, end_tick, total_queued, total_crafted, total_cancelled)
+local function create_collated_record(player, recipe_name, start_tick, end_tick, total_queued, total_crafted, total_cancelled, craft_timings)
   local rec = shared_utils.create_base_record("craft_item_collated", {
     name = defines.events.on_player_crafted_item,
     tick = end_tick,
@@ -31,6 +31,9 @@ local function create_collated_record(player, recipe_name, start_tick, end_tick,
   rec.total_queued = total_queued
   rec.total_crafted = total_crafted
   rec.total_cancelled = total_cancelled
+  
+  -- Add detailed timing information for each craft
+  rec.craft_timings = craft_timings or {}
   
   shared_utils.add_player_context_if_missing(rec, player)
   return rec
@@ -55,7 +58,8 @@ local function finalize_session(session_key, end_tick)
     end_tick,
     session.total_queued,
     session.total_crafted,
-    session.total_cancelled
+    session.total_cancelled,
+    session.craft_timings
   )
   
   local clean_rec = shared_utils.clean_record(rec)
@@ -82,19 +86,43 @@ local function on_pre_player_crafted_item(event)
   local session = crafting_sessions[session_key]
   if not session then
     -- Start a new crafting session
-    crafting_sessions[session_key] = {
+    session = {
       player_index = event.player_index,
       recipe_name = recipe_name,
       start_tick = event.tick,
       last_activity_tick = event.tick,
       total_queued = event.queued_count or 0,
       total_crafted = 0,
-      total_cancelled = 0
+      total_cancelled = 0,
+      craft_timings = {} -- Initialize craft_timings for new session
     }
+    crafting_sessions[session_key] = session
+    
+    -- Add timing entries for each queued craft
+    local queued_count = event.queued_count or 0
+    for i = 1, queued_count do
+      table.insert(session.craft_timings, {
+        queue_tick = event.tick,
+        completion_tick = nil,
+        cancelled_tick = nil,
+        status = "queued" -- "queued", "completed", "cancelled"
+      })
+    end
   else
     -- Update existing session (same recipe being queued again)
     session.last_activity_tick = event.tick
     session.total_queued = session.total_queued + (event.queued_count or 0)
+    
+    -- Add timing entries for the newly queued crafts
+    local queued_count = event.queued_count or 0
+    for i = 1, queued_count do
+      table.insert(session.craft_timings, {
+        queue_tick = event.tick,
+        completion_tick = nil,
+        cancelled_tick = nil,
+        status = "queued"
+      })
+    end
   end
 
   -- Helper to determine if a session is complete (all queued crafts resolved)
@@ -126,6 +154,15 @@ local function on_player_crafted_item(event)
     -- would not represent additional crafts but items produced, so we still
     -- increment by one here.
     session.total_crafted = session.total_crafted + 1
+    
+    -- Mark the first queued craft as completed
+    for i, timing in ipairs(session.craft_timings) do
+      if timing.status == "queued" then
+        timing.completion_tick = event.tick
+        timing.status = "completed"
+        break
+      end
+    end
 
     -- Attempt to finalise if the session has resolved all queued crafts
     if (session.total_crafted + session.total_cancelled) >= session.total_queued then
@@ -145,6 +182,17 @@ local function on_player_cancelled_crafting(event)
   if session then
     session.last_activity_tick = event.tick
     session.total_cancelled = session.total_cancelled + (event.cancel_count or 0)
+    
+    -- Mark the appropriate number of queued crafts as cancelled
+    local cancel_count = event.cancel_count or 0
+    local cancelled_so_far = 0
+    for i, timing in ipairs(session.craft_timings) do
+      if timing.status == "queued" and cancelled_so_far < cancel_count then
+        timing.cancelled_tick = event.tick
+        timing.status = "cancelled"
+        cancelled_so_far = cancelled_so_far + 1
+      end
+    end
 
     -- Attempt to finalise if the session has resolved all queued crafts
     if (session.total_crafted + session.total_cancelled) >= session.total_queued then
