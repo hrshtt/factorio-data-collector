@@ -1,8 +1,26 @@
 --@player_inventory_transfers.lua
 --@description Player inventory transfers action logger, logs insert_item and extract_item
 --@author Harshit Sharma
---@version 1.0.0
+--@version 2.0.0
 --@date 2025-01-27
+--
+-- SINGLE-SESSION FLOW IMPLEMENTATION:
+-- -----------------------------------
+-- This module uses a single active session per player to prevent duplicate transfer rows
+-- when the player's cursor jitters over the same entity multiple times.
+--
+-- Key Design:
+-- 1. current_sessions[player_index] stores ONE session per player (not keyed by tick/position)
+-- 2. on_selected_entity_changed: Overwrites the current session with fresh inventory snapshot
+-- 3. on_player_fast_transferred: Uses current session to diff and log ONE record per Ctrl-click
+-- 4. After logging, refreshes snapshot for consecutive transfers on same entity
+-- 5. Sessions auto-cleanup on entity deselection, player logout, or 300-tick timeout
+--
+-- Benefits:
+-- - Eliminates duplicate rows from cursor jitter
+-- - Maintains accurate consecutive transfer logging  
+-- - Covers all inventory types (fuel, result, modules) via combined inventory contents
+-- - Logs no-op transfers with no_op=true flag for alignment with raw events
 
 local player_inventory_transfers = {}
 local shared_utils = require("script.shared-utils")
@@ -14,13 +32,8 @@ local logistics = require("script.logistics")
 -- =========================
 local fast_transfer_logic = {}
 
--- Storage for tracking sessions
-local sessions = {}
-
--- Helper function to generate session key
-local function get_session_key(tick, selected_name, selected_x, selected_y)
-  return tick .. ":" .. selected_name .. ":" .. selected_x .. ":" .. selected_y
-end
+-- Storage for tracking current session per player (single session per player)
+local current_sessions = {}
 
 -- Helper function to create a transfer record
 local function create_transfer_record(player, action_type, entity, item_deltas, event_name, is_no_op)
@@ -52,91 +65,32 @@ local function create_transfer_record(player, action_type, entity, item_deltas, 
   return rec
 end
 
--- Helper function to finalize a session
-local function finalize_session(session_key, end_tick, from_player)
-  local session = sessions[session_key]
-  if not session then return end
-  
-  local player = game.players[session.player_index]
-  if not player or not player.valid then
-    sessions[session_key] = nil
-    return
-  end
-  
-  local entity = session.entity
-  if not entity or not entity.valid then
-    sessions[session_key] = nil
-    return
-  end
-  
-  -- Get current combined inventory state (all relevant inventories)
-  local current_contents = logistics.get_combined_inventory_contents(entity)
-  local item_deltas = logistics.diff_tables(session.inventory_snapshot, current_contents)
-  
-  -- Always log the event, even if no items moved (with no_op flag)
-  local has_changes = next(item_deltas) ~= nil
-  local is_no_op = not has_changes
-  
-  if from_player ~= nil then
-    local action_type = "insert_item"
-    if from_player == false then
-      action_type = "extract_item"
-    end
-    
-    local rec = create_transfer_record(player, action_type, entity, item_deltas, "fast_transfer", is_no_op)
-    local clean_rec = shared_utils.clean_record(rec)
-    local line = game.table_to_json(clean_rec)
-    shared_utils.buffer_event("player_inventory_transfers", line)
-  end
-  
-  -- Instead of deleting the session, update it with fresh snapshot for next transfer
-  if has_changes then
-    session.inventory_snapshot = current_contents
-    session.last_activity_tick = end_tick
-  end
-  
-  -- Only clean up if the entity is no longer selected or player left
-  local context = shared_utils.get_player_context(player)
-  if not context.selected or context.selected ~= entity.name or 
-     string.format("%.1f", entity.position.x) ~= context.selected_x or
-     string.format("%.1f", entity.position.y) ~= context.selected_y then
-    sessions[session_key] = nil
-  end
-end
-
 function fast_transfer_logic.on_selected_entity_changed(event)
   if not shared_utils.is_player_event(event) then return end
   
   local player = game.players[event.player_index]
   if not player or not player.valid then return end
   
-  -- Clean up any existing sessions for this player (entity deselection)
-  for session_key, session in pairs(sessions) do
-    if session.player_index == event.player_index then
-      sessions[session_key] = nil
-    end
-  end
-  
-  -- Get player context to find selected entity
-  local context = shared_utils.get_player_context(player)
-  if not context.selected then return end
-  
   -- Find the selected entity
   local selected_entity = player.selected
-  if not selected_entity or not selected_entity.valid then return end
+  if not selected_entity or not selected_entity.valid then 
+    -- Clear current session if no entity is selected
+    current_sessions[event.player_index] = nil
+    return 
+  end
   
   -- Only track player-accessible entities
-  if not logistics.is_player_accessible(selected_entity) then return end
-  
-  -- Create session key
-  local session_key = get_session_key(event.tick, context.selected, context.selected_x, context.selected_y)
+  if not logistics.is_player_accessible(selected_entity) then 
+    current_sessions[event.player_index] = nil
+    return 
+  end
   
   -- Get combined inventory snapshot (all relevant inventories)
   local inventory_snapshot = logistics.get_combined_inventory_contents(selected_entity)
   
-  -- Create new session
-  sessions[session_key] = {
-    player_index = event.player_index,
+  -- SINGLE-SESSION FLOW: Overwrite any existing session for this player
+  -- This eliminates duplicates from cursor jitter - only the latest entity selection matters
+  current_sessions[event.player_index] = {
     entity = selected_entity,
     inventory_snapshot = inventory_snapshot,
     start_tick = event.tick,
@@ -150,40 +104,52 @@ function fast_transfer_logic.on_player_fast_transferred(event)
   local player = game.players[event.player_index]
   if not player or not player.valid then return end
   
-  -- Get player context to find selected entity
-  local context = shared_utils.get_player_context(player)
-  if not context.selected then return end
+  -- Retrieve current session for this player
+  local current_session = current_sessions[event.player_index]
+  if not current_session then return end
   
-  -- Find matching session - we need to check recent sessions since the exact tick might not match
-  local matching_session = nil
-  local matching_key = nil
+  local entity = current_session.entity
+  if not entity or not entity.valid then
+    -- Clean up invalid session
+    current_sessions[event.player_index] = nil
+    return
+  end
   
-  for session_key, session in pairs(sessions) do
-    if session.player_index == event.player_index and 
-       session.entity and session.entity.valid and
-       session.entity == player.selected then
-      matching_session = session
-      matching_key = session_key
-      break
+  -- Verify the session entity matches the currently selected entity
+  if entity ~= player.selected then
+    -- Session entity doesn't match current selection, ignore this transfer
+    return
+  end
+  
+  -- Get current combined inventory state (all relevant inventories)
+  local current_contents = logistics.get_combined_inventory_contents(entity)
+  local item_deltas = logistics.diff_tables(current_session.inventory_snapshot, current_contents)
+  
+  -- Always log the event, even if no items moved (with no_op flag)
+  local has_changes = next(item_deltas) ~= nil
+  local is_no_op = not has_changes
+  
+  if event.from_player ~= nil then
+    local action_type = "insert_item"
+    if event.from_player == false then
+      action_type = "extract_item"
     end
+    
+    local rec = create_transfer_record(player, action_type, entity, item_deltas, "fast_transfer", is_no_op)
+    local clean_rec = shared_utils.clean_record(rec)
+    local line = game.table_to_json(clean_rec)
+    shared_utils.buffer_event("player_inventory_transfers", line)
   end
   
-  if matching_session then
-    -- Update activity and finalize the session
-    matching_session.last_activity_tick = event.tick
-    finalize_session(matching_key, event.tick, event.from_player)
-  end
+  -- SINGLE-SESSION FLOW: Refresh snapshot for consecutive transfers on same entity
+  -- This allows multiple Ctrl-clicks on same entity to be tracked separately
+  current_session.inventory_snapshot = current_contents
+  current_session.last_activity_tick = event.tick
 end
 
 function fast_transfer_logic.on_player_left_game(event)
-  local player_index = event.player_index
-  
-  -- Finalize any active sessions for this player
-  for session_key, session in pairs(sessions) do
-    if session.player_index == player_index then
-      finalize_session(session_key, event.tick, nil)
-    end
-  end
+  -- Clear current session for the player who left
+  current_sessions[event.player_index] = nil
 end
 
 function fast_transfer_logic.cleanup_old_sessions()
@@ -191,10 +157,10 @@ function fast_transfer_logic.cleanup_old_sessions()
   -- Keep sessions alive for only 300 ticks as requested
   local timeout_ticks = 300
 
-  for session_key, session in pairs(sessions) do
+  for player_index, session in pairs(current_sessions) do
     if (current_tick - session.last_activity_tick) >= timeout_ticks then
       -- Timeout - clean up without logging
-      sessions[session_key] = nil
+      current_sessions[player_index] = nil
     end
   end
 end
@@ -282,17 +248,17 @@ end
 function player_inventory_transfers.on_init()
   if not global.player_inventory_transfers then
     global.player_inventory_transfers = {
-      sessions = {},
-      cursor_states = {}
+      current_sessions = {}, -- Single session per player (indexed by player_index)
+      cursor_states = {}     -- Cursor stack tracking per player
     }
   end
-  sessions = global.player_inventory_transfers.sessions
+  current_sessions = global.player_inventory_transfers.current_sessions
   cursor_states = global.player_inventory_transfers.cursor_states
 end
 
 function player_inventory_transfers.on_load()
   if global.player_inventory_transfers then
-    sessions = global.player_inventory_transfers.sessions
+    current_sessions = global.player_inventory_transfers.current_sessions
     cursor_states = global.player_inventory_transfers.cursor_states
   end
 end
