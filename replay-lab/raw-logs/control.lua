@@ -78,6 +78,11 @@ function raw_logger.log_event(event_name, event_data)
   if event_data.entity then
     event_data.entity_name = shared_utils.get_entity_info(event_data.entity)
   end
+
+  -- Add last_entity name if last_entity exists (for on_selected_entity_changed)
+  if event_data.last_entity then
+    event_data.last_entity = shared_utils.get_entity_info(event_data.last_entity)
+  end
   
   -- Add item info if stack exists
   if event_data.stack then
