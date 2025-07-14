@@ -23,7 +23,7 @@ local function get_session_key(tick, selected_name, selected_x, selected_y)
 end
 
 -- Helper function to create a transfer record
-local function create_transfer_record(player, action_type, entity, item_deltas, event_name)
+local function create_transfer_record(player, action_type, entity, item_deltas, event_name, is_no_op)
   local rec = shared_utils.create_base_record("player_inventory_transfers", {
     name = defines.events.on_player_fast_transferred,
     tick = game.tick,
@@ -36,6 +36,7 @@ local function create_transfer_record(player, action_type, entity, item_deltas, 
   rec.entity_x = string.format("%.1f", entity.position.x)
   rec.entity_y = string.format("%.1f", entity.position.y)
   rec.items = {}
+  rec.no_op = is_no_op or false
   
   -- Convert item deltas to transfer records
   for item_name, delta in pairs(item_deltas) do
@@ -68,31 +69,39 @@ local function finalize_session(session_key, end_tick, from_player)
     return
   end
   
-  -- Get current inventory state
-  local inventory_index = logistics.find_primary_inventory_index(entity)
-  if not inventory_index then
-    sessions[session_key] = nil
-    return
-  end
-  
-  local current_contents = logistics.get_inventory_contents_by_holder(entity, inventory_index)
+  -- Get current combined inventory state (all relevant inventories)
+  local current_contents = logistics.get_combined_inventory_contents(entity)
   local item_deltas = logistics.diff_tables(session.inventory_snapshot, current_contents)
   
-  -- Only log if there are actual changes and we have transfer direction info
-  if next(item_deltas) and from_player ~= nil then
+  -- Always log the event, even if no items moved (with no_op flag)
+  local has_changes = next(item_deltas) ~= nil
+  local is_no_op = not has_changes
+  
+  if from_player ~= nil then
     local action_type = "insert_item"
     if from_player == false then
       action_type = "extract_item"
     end
     
-    local rec = create_transfer_record(player, action_type, entity, item_deltas, "fast_transfer")
+    local rec = create_transfer_record(player, action_type, entity, item_deltas, "fast_transfer", is_no_op)
     local clean_rec = shared_utils.clean_record(rec)
     local line = game.table_to_json(clean_rec)
     shared_utils.buffer_event("player_inventory_transfers", line)
   end
   
-  -- Clean up the session
-  sessions[session_key] = nil
+  -- Instead of deleting the session, update it with fresh snapshot for next transfer
+  if has_changes then
+    session.inventory_snapshot = current_contents
+    session.last_activity_tick = end_tick
+  end
+  
+  -- Only clean up if the entity is no longer selected or player left
+  local context = shared_utils.get_player_context(player)
+  if not context.selected or context.selected ~= entity.name or 
+     string.format("%.1f", entity.position.x) ~= context.selected_x or
+     string.format("%.1f", entity.position.y) ~= context.selected_y then
+    sessions[session_key] = nil
+  end
 end
 
 function fast_transfer_logic.on_selected_entity_changed(event)
@@ -100,6 +109,13 @@ function fast_transfer_logic.on_selected_entity_changed(event)
   
   local player = game.players[event.player_index]
   if not player or not player.valid then return end
+  
+  -- Clean up any existing sessions for this player (entity deselection)
+  for session_key, session in pairs(sessions) do
+    if session.player_index == event.player_index then
+      sessions[session_key] = nil
+    end
+  end
   
   -- Get player context to find selected entity
   local context = shared_utils.get_player_context(player)
@@ -115,11 +131,8 @@ function fast_transfer_logic.on_selected_entity_changed(event)
   -- Create session key
   local session_key = get_session_key(event.tick, context.selected, context.selected_x, context.selected_y)
   
-  -- Get inventory snapshot
-  local inventory_index = logistics.find_primary_inventory_index(selected_entity)
-  if not inventory_index then return end
-  
-  local inventory_snapshot = logistics.get_inventory_contents_by_holder(selected_entity, inventory_index)
+  -- Get combined inventory snapshot (all relevant inventories)
+  local inventory_snapshot = logistics.get_combined_inventory_contents(selected_entity)
   
   -- Create new session
   sessions[session_key] = {
@@ -234,24 +247,10 @@ function cursor_stack_logic.on_player_cursor_stack_changed(event)
     
     -- Make sure it's an insertable item (not a building or equipment)
     if logistics.can_be_inserted(context.cursor_item) then
-      -- Create insert_item record
-      local rec = shared_utils.create_base_record("player_inventory_transfers", {
-        name = defines.events.on_player_cursor_stack_changed,
-        tick = event.tick,
-        player_index = event.player_index
-      })
+      -- Create insert_item record using the helper function
+      local item_deltas = {[context.cursor_item] = 1}
+      local rec = create_transfer_record(player, "insert_item", selected_entity, item_deltas, "on_player_cursor_stack_changed", false)
       
-      rec.action = "insert_item"
-      rec.event_name = "on_player_cursor_stack_changed"
-      rec.entity = selected_entity.name
-      rec.entity_x = context.selected_x
-      rec.entity_y = context.selected_y
-      rec.items = {{
-        item = context.cursor_item,
-        count = 1
-      }}
-      
-      shared_utils.add_player_context_if_missing(rec, player)
       local clean_rec = shared_utils.clean_record(rec)
       local line = game.table_to_json(clean_rec)
       shared_utils.buffer_event("player_inventory_transfers", line)

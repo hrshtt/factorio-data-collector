@@ -89,13 +89,95 @@ function logistics.find_primary_inventory_index(entity)
     return defines.inventory.rocket_silo_input
   elseif entity.type == "container" or entity.type == "logistic-container" then
     return defines.inventory.chest
-  elseif entity.type == "assembling-machine" then
+  elseif entity.type == "assembling-machine" or entity.type == "oil-refinery" or entity.type == "chemical-plant" then
     return defines.inventory.assembling_machine_input
   elseif entity.type == "furnace" then
     return defines.inventory.furnace_source
-  else
+  elseif entity.type == "mining-drill" then
+    return defines.inventory.mining_drill_modules
+  elseif entity.type == "lab" then
+    return defines.inventory.lab_input
+  elseif entity.type == "turret" or entity.type == "ammo-turret" then
+    return defines.inventory.turret_ammo
+  elseif entity.type == "roboport" then
+    return defines.inventory.roboport_robot
+  elseif entity.type == "character" then
+    return defines.inventory.character_main
+  elseif entity.type == "car" or entity.type == "tank" or entity.type == "spider-vehicle" then
     return defines.inventory.car_trunk
+  elseif entity.type == "cargo-wagon" then
+    return defines.inventory.cargo_wagon
+  elseif entity.type == "artillery-wagon" then
+    return defines.inventory.artillery_wagon_ammo
+  elseif entity.type == "reactor" then
+    return defines.inventory.fuel
+  elseif entity.type == "boiler" or entity.type == "burner-generator" then
+    return defines.inventory.fuel
+  else
+    return defines.inventory.chest -- fallback for unknown types
   end
+end
+
+-- Get all relevant inventories for an entity (for comprehensive diffing)
+function logistics.get_all_relevant_inventories(entity)
+  if not (entity and entity.valid) then
+    return {}
+  end
+
+  local inventories = {}
+  
+  if entity.type == "furnace" then
+    -- For furnaces, track both fuel and result slots since players interact with both
+    inventories[defines.inventory.furnace_source] = "fuel"
+    inventories[defines.inventory.furnace_result] = "result"
+  elseif entity.type == "mining-drill" then
+    -- For mining drills, track both output and modules
+    if entity.get_inventory(defines.inventory.mining_drill_modules) then
+      inventories[defines.inventory.mining_drill_modules] = "modules"
+    end
+    -- Note: mining drills don't have a regular output inventory, they output directly to belts/inserters
+  elseif entity.type == "assembling-machine" or entity.type == "oil-refinery" or entity.type == "chemical-plant" then
+    inventories[defines.inventory.assembling_machine_input] = "input"
+    inventories[defines.inventory.assembling_machine_output] = "output"
+    inventories[defines.inventory.assembling_machine_modules] = "modules"
+  elseif entity.name == "rocket-silo" then
+    inventories[defines.inventory.rocket_silo_input] = "input"
+    inventories[defines.inventory.rocket_silo_output] = "output"
+    inventories[defines.inventory.rocket_silo_modules] = "modules"
+  elseif entity.type == "lab" then
+    inventories[defines.inventory.lab_input] = "input"
+    inventories[defines.inventory.lab_modules] = "modules"
+  else
+    -- For simple entities, just use the primary inventory
+    local primary_idx = logistics.find_primary_inventory_index(entity)
+    if primary_idx then
+      inventories[primary_idx] = "primary"
+    end
+  end
+
+  return inventories
+end
+
+-- Get combined inventory contents from all relevant inventories
+function logistics.get_combined_inventory_contents(entity)
+  if not (entity and entity.valid) then
+    return {}
+  end
+
+  local combined_contents = {}
+  local relevant_inventories = logistics.get_all_relevant_inventories(entity)
+  
+  for inventory_idx, inventory_type in pairs(relevant_inventories) do
+    local inventory = entity.get_inventory(inventory_idx)
+    if inventory and inventory.valid then
+      local contents = inventory.get_contents()
+      for item_name, count in pairs(contents) do
+        combined_contents[item_name] = (combined_contents[item_name] or 0) + count
+      end
+    end
+  end
+  
+  return combined_contents
 end
 
 function logistics.get_player_context(player_index)
@@ -203,6 +285,7 @@ logistics.player_accessible_types = {
   ["roboport"] = true,
   ["reactor"] = true,
   ["boiler"] = true,
+  ["inserter"] = true,
   ["burner-generator"] = true,
   ["market"] = true,
   ["character"] = true,
