@@ -89,6 +89,95 @@ function raw_logger.log_event(event_name, event_data)
     event_data.item_name, event_data.item_count = shared_utils.get_item_info(event_data.stack)
   elseif event_data.item_stack then
     event_data.item_name, event_data.item_count = shared_utils.get_item_info(event_data.item_stack)
+  elseif event_data.item then
+    -- GUI events use 'item' field, not 'stack' or 'item_stack'
+    pcall(function()
+      event_data.item_name, event_data.item_count = shared_utils.get_item_info(event_data.item)
+    end)
+  end
+  
+  -- Add GUI-specific context
+  if event_data.gui_type then
+    pcall(function()
+      -- Convert gui_type enum to readable string - build table safely
+      local gui_type_names = {}
+      
+      -- Only add entries if the defines actually exist
+      if defines.gui_type then
+        if defines.gui_type.achievement then gui_type_names[defines.gui_type.achievement] = "achievement" end
+        if defines.gui_type.blueprint_book then gui_type_names[defines.gui_type.blueprint_book] = "blueprint_book" end
+        if defines.gui_type.blueprint_library then gui_type_names[defines.gui_type.blueprint_library] = "blueprint_library" end
+        if defines.gui_type.blueprint_setup then gui_type_names[defines.gui_type.blueprint_setup] = "blueprint_setup" end
+        if defines.gui_type.bonus then gui_type_names[defines.gui_type.bonus] = "bonus" end
+        if defines.gui_type.character then gui_type_names[defines.gui_type.character] = "character" end
+        if defines.gui_type.controller then gui_type_names[defines.gui_type.controller] = "controller" end
+        if defines.gui_type.custom then gui_type_names[defines.gui_type.custom] = "custom" end
+        if defines.gui_type.entity then gui_type_names[defines.gui_type.entity] = "entity" end
+        if defines.gui_type.equipment then gui_type_names[defines.gui_type.equipment] = "equipment" end
+        if defines.gui_type.item then gui_type_names[defines.gui_type.item] = "item" end
+        if defines.gui_type.logistic then gui_type_names[defines.gui_type.logistic] = "logistic" end
+        if defines.gui_type.none then gui_type_names[defines.gui_type.none] = "none" end
+        if defines.gui_type.other_player then gui_type_names[defines.gui_type.other_player] = "other_player" end
+        if defines.gui_type.permissions then gui_type_names[defines.gui_type.permissions] = "permissions" end
+        if defines.gui_type.production then gui_type_names[defines.gui_type.production] = "production" end
+        if defines.gui_type.research then gui_type_names[defines.gui_type.research] = "research" end
+        if defines.gui_type.server_management then gui_type_names[defines.gui_type.server_management] = "server_management" end
+        if defines.gui_type.tile then gui_type_names[defines.gui_type.tile] = "tile" end
+        if defines.gui_type.train then gui_type_names[defines.gui_type.train] = "train" end
+        if defines.gui_type.tutorial then gui_type_names[defines.gui_type.tutorial] = "tutorial" end
+      end
+      
+      -- Safe lookup with fallback
+      local gui_type_value = event_data.gui_type
+      if gui_type_value and gui_type_names[gui_type_value] then
+        event_data.gui_type_name = gui_type_names[gui_type_value]
+      else
+        event_data.gui_type_name = "unknown_" .. tostring(gui_type_value or "nil")
+      end
+    end)
+  end
+  
+  -- Add equipment info if equipment exists
+  if event_data.equipment and event_data.equipment.valid then
+    pcall(function()
+      event_data.equipment_name = event_data.equipment.name
+      event_data.equipment_type = event_data.equipment.type
+    end)
+  end
+  
+  -- Add other player info if other_player exists
+  if event_data.other_player and event_data.other_player.valid then
+    pcall(function()
+      event_data.other_player_name = event_data.other_player.name
+      event_data.other_player_index = event_data.other_player.index
+    end)
+  end
+  
+  -- Add GUI element info if element exists
+  if event_data.element and event_data.element.valid then
+    pcall(function()
+      event_data.element_name = event_data.element.name
+      event_data.element_type = event_data.element.type
+      if event_data.element.caption then
+        event_data.element_caption = event_data.element.caption
+      end
+    end)
+  end
+  
+  -- Add inventory info if inventory exists
+  if event_data.inventory and event_data.inventory.valid then
+    pcall(function()
+      event_data.inventory_type = event_data.inventory.name
+      event_data.inventory_size = #event_data.inventory
+    end)
+  end
+  
+  -- Add technology info if technology exists
+  if event_data.technology and event_data.technology.valid then
+    pcall(function()
+      event_data.technology_name = event_data.technology.name
+      event_data.technology_level = event_data.technology.level
+    end)
   end
   
   -- Format position if available
