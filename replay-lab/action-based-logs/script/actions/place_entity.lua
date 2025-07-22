@@ -1,39 +1,47 @@
---@place_entity.lua
---@description Place entity action logger
---@author Harshit Sharma
---@version 1.0.0
---@date 2025-01-27
+-- place_entity.lua
+-- Place-entity action logger               v1.1.0  (2025-07-23)  Harshit Sharma
 
-local place_entity = {}
-local shared_utils = require("script.shared-utils")
+local place_entity  = {}
+local shared_utils  = require("script.shared-utils")
+
+-- Returns quarter-turns (0-3) clockwise from default ‘north’
+local function qturns_from_direction(dir)
+  dir = dir or 0                     -- nil → north
+  return math.floor(dir / 2) % 4     -- 0,1,2,3
+end
 
 function place_entity.register_events(event_dispatcher)
   event_dispatcher.register_handler(defines.events.on_built_entity, function(e)
     if not shared_utils.is_player_event(e) then return end
-    local player = game.players[e.player_index]
-    local rec = shared_utils.create_base_record("on_built_entity", e)
-    rec.action = "place_entity"
-    
-    -- Use created_entity instead of entity (correct field for on_built_entity event)
-    if e.created_entity then
-      rec.entity = e.created_entity.name
-      
-      -- Format entity position with precision
-      if e.created_entity.position then
-        rec.entity_x = string.format("%.1f", e.created_entity.position.x)
-        rec.entity_y = string.format("%.1f", e.created_entity.position.y)
-      end
-    end
+
+    local player  = game.players[e.player_index]
+    local rec     = shared_utils.create_base_record("on_built_entity", e)
+    rec.action    = "place_entity"
 
     if player.position then
       rec.px = string.format("%.1f", player.position.x)
       rec.py = string.format("%.1f", player.position.y)
     end
-    
-    local clean_rec = shared_utils.clean_record(rec)
-    local line = game.table_to_json(clean_rec)
-    shared_utils.buffer_event("place_entity", line)
+
+    local ent = e.created_entity      -- ← correct field for this event
+    if ent then
+      rec.entity = ent.name
+
+      if ent.position then            -- 1 dp pos for consistency
+        rec.entity_x = string.format("%.1f", ent.position.x)
+        rec.entity_y = string.format("%.1f", ent.position.y)
+      end
+
+      rec.direction_name = defines.direction[ent.direction]
+      rec.direction = ent.direction
+
+      -- single, canonical rotation field
+      rec.number_of_rotations = qturns_from_direction(ent.direction)
+    end
+
+
+    shared_utils.buffer_event("place_entity", game.table_to_json(shared_utils.clean_record(rec)))
   end)
 end
 
-return place_entity 
+return place_entity
