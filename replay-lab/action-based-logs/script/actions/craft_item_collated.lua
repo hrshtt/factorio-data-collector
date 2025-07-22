@@ -20,22 +20,23 @@ local function create_collated_record(player, recipe_name, start_tick, end_tick,
   local rec = shared_utils.create_base_record("craft_item_collated", {
     name = defines.events.on_player_crafted_item,
     tick = end_tick,
-    player_index = player.index
-  })
+  }, player)
   
-  rec.action = "craft_item_collated"
-  rec.recipe = recipe_name
-  rec.start_tick = start_tick
-  rec.end_tick = end_tick
-  rec.duration_ticks = end_tick - start_tick
-  rec.total_queued = total_queued
-  rec.total_crafted = total_crafted
-  rec.total_cancelled = total_cancelled
+  rec.action = "craft_item"
+  rec.timing = {
+    start_tick = start_tick,
+    end_tick = end_tick,
+    duration_ticks = end_tick - start_tick,
+  }
+  rec.crafting = {
+    recipe = recipe_name,
+    total_queued = total_queued,
+    total_crafted = total_crafted,
+    total_cancelled = total_cancelled,
+    craft_timings = craft_timings or {},
+  }
   
-  -- Add detailed timing information for each craft
-  rec.craft_timings = craft_timings or {}
-  
-  shared_utils.add_player_context_if_missing(rec, player)
+  -- shared_utils.add_player_context_if_missing(rec, player)
   return rec
 end
 

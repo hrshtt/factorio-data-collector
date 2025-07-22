@@ -42,6 +42,7 @@ function set_entity_recipe.register_events(event_dispatcher)
   local function on_gui_closed(e)
     if not shared_utils.is_player_event(e) then return end
     if e.gui_type ~= defines.gui_type.entity or not e.entity or not is_production_machine(e.entity) then return end
+    local player = game.players[e.player_index]
     local player_index = e.player_index
     local entity = e.entity
     local recipe = entity.get_recipe()
@@ -50,13 +51,14 @@ function set_entity_recipe.register_events(event_dispatcher)
     local old_recipe = state and state.entity_unit_number == entity.unit_number and state.old_recipe or nil
     -- Only log if recipe changed (including from nil)
     if old_recipe ~= new_recipe then
-      local rec = shared_utils.create_base_record("set_entity_recipe", e)
+      local rec = shared_utils.create_base_record("set_entity_recipe", e, player)
       rec.action = "set_entity_recipe"
-      rec.entity = entity.name
-      rec.entity_type = entity.type
-      rec.old_recipe = old_recipe
-      rec.new_recipe = new_recipe
-      shared_utils.add_player_context_if_missing(rec, game.players[player_index])
+      rec.entity = {}
+      rec.entity.name = entity.name
+      rec.entity.type = entity.type
+      rec.entity.old_recipe = old_recipe
+      rec.entity.new_recipe = new_recipe
+      -- shared_utils.add_player_context_if_missing(rec, game.players[player_index])
       local clean_rec = shared_utils.clean_record(rec)
       local line = game.table_to_json(clean_rec)
       shared_utils.buffer_event("set_entity_recipe", line)
@@ -77,6 +79,7 @@ function set_entity_recipe.register_events(event_dispatcher)
   -- Post-paste: compare and log if changed
   local function on_entity_settings_pasted(e)
     if not shared_utils.is_player_event(e) then return end
+    local player = game.players[e.player_index]
     local src = e.source
     local dst = e.destination
     if not (is_production_machine(src) and is_production_machine(dst)) then return end
@@ -85,15 +88,19 @@ function set_entity_recipe.register_events(event_dispatcher)
     local new_r = dst.get_recipe()
     local new = new_r and new_r.name or nil
     if old ~= new then
-      local rec = shared_utils.create_base_record("set_entity_recipe", e)
+      local rec = shared_utils.create_base_record("set_entity_recipe", e, player)
       rec.action = "set_entity_recipe"
-      rec.entity = dst.name
-      rec.entity_type = dst.type
-      rec.old_recipe = old
-      rec.new_recipe = new
-      rec.paste_source_entity = src.name
-      rec.paste_source_entity_type = src.type
-      shared_utils.add_player_context_if_missing(rec, game.players[e.player_index])
+      rec.entity = {
+        name = dst.name,
+        type = dst.type,
+        old_recipe = old,
+        new_recipe = new
+      }
+      rec.paste_source_entity = {
+        name = src.name,
+        type = src.type
+      }
+      -- shared_utils.add_player_context_if_missing(rec, game.players[e.player_index])
       local clean_rec = shared_utils.clean_record(rec)
       local line = game.table_to_json(clean_rec)
       shared_utils.buffer_event("set_entity_recipe", line)

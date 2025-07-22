@@ -15,28 +15,25 @@ function place_entity.register_events(event_dispatcher)
     if not shared_utils.is_player_event(e) then return end
 
     local player  = game.players[e.player_index]
-    local rec     = shared_utils.create_base_record("on_built_entity", e)
+    local rec     = shared_utils.create_base_record("on_built_entity", e, player)
     rec.action    = "place_entity"
-
-    if player.position then
-      rec.px = string.format("%.1f", player.position.x)
-      rec.py = string.format("%.1f", player.position.y)
-    end
 
     local ent = e.created_entity      -- ← correct field for this event
     if ent then
-      rec.entity = ent.name
-
+      rec.entity = {}
+      rec.entity.name = ent.name
       if ent.position then            -- 1 dp pos for consistency
-        rec.entity_x = string.format("%.1f", ent.position.x)
-        rec.entity_y = string.format("%.1f", ent.position.y)
+        rec.entity.x = string.format("%.1f", ent.position.x)
+        rec.entity.y = string.format("%.1f", ent.position.y)
       end
 
-      rec.direction_name = defines.direction[ent.direction]
-      rec.direction = ent.direction
-
+      if ent.direction then
+        rec.entity.direction = {}
+        rec.entity.direction.name = defines.direction[ent.direction]
+        rec.entity.direction.value = ent.direction
+        rec.entity.direction.number_of_rotations = qturns_from_direction(ent.direction)
+      end
       -- single, canonical rotation field
-      rec.number_of_rotations = qturns_from_direction(ent.direction)
     end
 
 

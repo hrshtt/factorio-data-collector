@@ -82,29 +82,44 @@ end
 -- ============================================================================
 -- BASE RECORD CREATION
 -- ============================================================================
-function shared_utils.create_base_record(evt_name, e)
+function shared_utils.create_base_record(evt_name, e, player)
   local rec = {
     t  = e.tick,
-    p  = e.player_index,
-    ev = evt_name,
+    event = {
+      name = evt_name,
+    },
+    player = {
+      index = e.player_index,
+      x = string.format("%.1f", player.position.x),
+      y = string.format("%.1f", player.position.y),
+    }
   }
   
-  -- Add position if available in event
-  if e.position then
-    rec.x = string.format("%.1f", e.position.x)
-    rec.y = string.format("%.1f", e.position.y)
-  end
+  -- -- Add position if available in event
+  -- if e.position then
+  --   rec.x = string.format("%.1f", e.position.x)
+  --   rec.y = string.format("%.1f", e.position.y)
+  -- end
   
   -- Add entity info if available
   if e.entity then
-    rec.entity = shared_utils.get_entity_info(e.entity)
+    rec.entity = {}
+    rec.entity.name = shared_utils.get_entity_info(e.entity)
+    if e.entity.position then
+      rec.entity.x = string.format("%.1f", e.entity.position.x)
+      rec.entity.y = string.format("%.1f", e.entity.position.y)
+    end
   end
   
   -- Add item/stack info if available
   if e.stack then
-    rec.item, rec.count = shared_utils.get_item_info(e.stack)
+    rec.item = {}
+    rec.item.name = shared_utils.get_item_info(e.stack)
+    rec.item.count = e.stack.count
   elseif e.item_stack then
-    rec.item, rec.count = shared_utils.get_item_info(e.item_stack)
+    rec.item = {}
+    rec.item.name = shared_utils.get_item_info(e.item_stack)
+    rec.item.count = e.item_stack.count
   end
   
   return rec

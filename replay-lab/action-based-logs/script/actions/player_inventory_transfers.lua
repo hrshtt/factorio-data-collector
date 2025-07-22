@@ -38,16 +38,18 @@ local current_sessions = {}
 -- Helper function to create a transfer record
 local function create_transfer_record(player, action_type, entity, item_deltas, event_name, is_no_op)
   local rec = shared_utils.create_base_record("player_inventory_transfers", {
-    name = defines.events.on_player_fast_transferred,
+    -- name = defines.events.on_player_fast_transferred,
     tick = game.tick,
-    player_index = player.index
-  })
+    -- player_index = player.index
+  }, player)
   
   rec.action = action_type -- "insert_item" or "extract_item"
-  rec.event_name = event_name
-  rec.entity = entity.name
-  rec.entity_x = string.format("%.1f", entity.position.x)
-  rec.entity_y = string.format("%.1f", entity.position.y)
+  rec.entity = {}
+  rec.entity.name = entity.name
+  if entity.position then
+    rec.entity.x = string.format("%.1f", entity.position.x)
+    rec.entity.y = string.format("%.1f", entity.position.y)
+  end
   rec.items = {}
   rec.no_op = is_no_op or false
   

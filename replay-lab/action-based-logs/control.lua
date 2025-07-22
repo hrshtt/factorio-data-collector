@@ -85,10 +85,10 @@ local core_meta = {}
 
 function core_meta.log_event(event_name, e)
   local player = game.players[e.player_index]
-  local rec = shared_utils.create_base_record(event_name, e)
+  local rec = shared_utils.create_base_record(event_name, e, player)
   local extractor = core_meta.get_extractor(event_name)
   extractor(e, rec, player)
-  shared_utils.add_player_context_if_missing(rec, player)
+  -- shared_utils.add_player_context_if_missing(rec, player)
   local clean_rec = shared_utils.clean_record(rec)
   local line = game.table_to_json(clean_rec)
   shared_utils.buffer_event("core-meta", line)
