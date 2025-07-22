@@ -13,9 +13,23 @@ function place_entity.register_events(event_dispatcher)
     local player = game.players[e.player_index]
     local rec = shared_utils.create_base_record("on_built_entity", e)
     rec.action = "place_entity"
-    rec.entity = e.entity and e.entity.name or nil
-    rec.position = e.entity and e.entity.position or nil
-    shared_utils.add_player_context_if_missing(rec, player)
+    
+    -- Use created_entity instead of entity (correct field for on_built_entity event)
+    if e.created_entity then
+      rec.entity = e.created_entity.name
+      
+      -- Format entity position with precision
+      if e.created_entity.position then
+        rec.entity_x = string.format("%.1f", e.created_entity.position.x)
+        rec.entity_y = string.format("%.1f", e.created_entity.position.y)
+      end
+    end
+
+    if player.position then
+      rec.px = string.format("%.1f", player.position.x)
+      rec.py = string.format("%.1f", player.position.y)
+    end
+    
     local clean_rec = shared_utils.clean_record(rec)
     local line = game.table_to_json(clean_rec)
     shared_utils.buffer_event("place_entity", line)
