@@ -51,6 +51,9 @@ case "$SCRIPT_TYPE" in
     "action")
         SCRIPTS_DIR="./replay-lab/action-based-logs"
         ;;
+    "observation")
+        SCRIPTS_DIR="./replay-lab/observation-logs"
+        ;;
     "raw")
         SCRIPTS_DIR="./replay-lab/raw-logs"
         ;;
