@@ -10,8 +10,7 @@ local shared_utils = require("script.shared-utils")
 function set_research.register_events(event_dispatcher)
   event_dispatcher.register_handler(defines.events.on_research_started, function(e)
     local player = game.players[1]
-    local rec = shared_utils.create_base_record("on_research_started", e, player)
-    rec.action = "set_research"
+    local rec = shared_utils.create_base_record("research_started", e, player)
     rec.research = e.research and e.research.name or nil
     rec.by_script = e.by_script
     local clean_rec = shared_utils.clean_record(rec)
@@ -21,8 +20,7 @@ function set_research.register_events(event_dispatcher)
   
   event_dispatcher.register_handler(defines.events.on_research_finished, function(e)
     local player = game.players[1]
-    local rec = shared_utils.create_base_record("on_research_finished", e, player)
-    rec.action = "set_research"
+    local rec = shared_utils.create_base_record("research_finished", e, player)
     rec.research = e.research and e.research.name or nil
     rec.by_script = e.by_script
     local clean_rec = shared_utils.clean_record(rec)
@@ -32,8 +30,7 @@ function set_research.register_events(event_dispatcher)
   
   event_dispatcher.register_handler(defines.events.on_research_cancelled, function(e)
     local player = game.players[1]
-    local rec = shared_utils.create_base_record("on_research_cancelled", e, player)
-    rec.action = "set_research"
+    local rec = shared_utils.create_base_record("research_cancelled", e, player)
     rec.research = e.research and e.research.name or nil
     rec.by_script = e.by_script
     local clean_rec = shared_utils.clean_record(rec)

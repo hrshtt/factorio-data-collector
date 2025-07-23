@@ -15,8 +15,7 @@ function place_entity.register_events(event_dispatcher)
     if not shared_utils.is_player_event(e) then return end
 
     local player  = game.players[e.player_index]
-    local rec     = shared_utils.create_base_record("on_built_entity", e, player)
-    rec.action    = "place_entity"
+    local rec     = shared_utils.create_base_record("place_entity", e, player)
 
     local ent = e.created_entity      -- ← correct field for this event
     if ent then

@@ -37,13 +37,10 @@ local current_sessions = {}
 
 -- Helper function to create a transfer record
 local function create_transfer_record(player, action_type, entity, item_deltas, event_name, is_no_op)
-  local rec = shared_utils.create_base_record("player_inventory_transfers", {
-    -- name = defines.events.on_player_fast_transferred,
+  local rec = shared_utils.create_base_record(action_type, {
     tick = game.tick,
-    -- player_index = player.index
   }, player)
   
-  rec.action = action_type -- "insert_item" or "extract_item"
   rec.entity = {}
   rec.entity.name = entity.name
   if entity.position then
@@ -63,7 +60,6 @@ local function create_transfer_record(player, action_type, entity, item_deltas, 
     end
   end
   
-  shared_utils.add_player_context_if_missing(rec, player)
   return rec
 end
 

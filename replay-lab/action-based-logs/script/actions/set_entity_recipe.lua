@@ -52,13 +52,11 @@ function set_entity_recipe.register_events(event_dispatcher)
     -- Only log if recipe changed (including from nil)
     if old_recipe ~= new_recipe then
       local rec = shared_utils.create_base_record("set_entity_recipe", e, player)
-      rec.action = "set_entity_recipe"
       rec.entity = {}
       rec.entity.name = entity.name
       rec.entity.type = entity.type
       rec.entity.old_recipe = old_recipe
       rec.entity.new_recipe = new_recipe
-      -- shared_utils.add_player_context_if_missing(rec, game.players[player_index])
       local clean_rec = shared_utils.clean_record(rec)
       local line = game.table_to_json(clean_rec)
       shared_utils.buffer_event("set_entity_recipe", line)
@@ -89,7 +87,6 @@ function set_entity_recipe.register_events(event_dispatcher)
     local new = new_r and new_r.name or nil
     if old ~= new then
       local rec = shared_utils.create_base_record("set_entity_recipe", e, player)
-      rec.action = "set_entity_recipe"
       rec.entity = {
         name = dst.name,
         type = dst.type,
@@ -100,7 +97,6 @@ function set_entity_recipe.register_events(event_dispatcher)
         name = src.name,
         type = src.type
       }
-      -- shared_utils.add_player_context_if_missing(rec, game.players[e.player_index])
       local clean_rec = shared_utils.clean_record(rec)
       local line = game.table_to_json(clean_rec)
       shared_utils.buffer_event("set_entity_recipe", line)

@@ -17,12 +17,10 @@ end
 
 -- Helper function to create a collated record
 local function create_collated_record(player, recipe_name, start_tick, end_tick, total_queued, total_crafted, total_cancelled, craft_timings)
-  local rec = shared_utils.create_base_record("craft_item_collated", {
-    name = defines.events.on_player_crafted_item,
+  local rec = shared_utils.create_base_record("craft_item", {
     tick = end_tick,
   }, player)
-  
-  rec.action = "craft_item"
+
   rec.timing = {
     start_tick = start_tick,
     end_tick = end_tick,
@@ -36,7 +34,6 @@ local function create_collated_record(player, recipe_name, start_tick, end_tick,
     craft_timings = craft_timings or {},
   }
   
-  -- shared_utils.add_player_context_if_missing(rec, player)
   return rec
 end
 

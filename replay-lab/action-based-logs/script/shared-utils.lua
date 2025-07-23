@@ -82,24 +82,16 @@ end
 -- ============================================================================
 -- BASE RECORD CREATION
 -- ============================================================================
-function shared_utils.create_base_record(evt_name, e, player)
+function shared_utils.create_base_record(action_name, e, player)
   local rec = {
     t  = e.tick,
-    event = {
-      name = evt_name,
-    },
+    action = action_name,
     player = {
       index = e.player_index,
       x = string.format("%.1f", player.position.x),
       y = string.format("%.1f", player.position.y),
     }
   }
-  
-  -- -- Add position if available in event
-  -- if e.position then
-  --   rec.x = string.format("%.1f", e.position.x)
-  --   rec.y = string.format("%.1f", e.position.y)
-  -- end
   
   -- Add entity info if available
   if e.entity then
@@ -123,15 +115,6 @@ function shared_utils.create_base_record(evt_name, e, player)
   end
   
   return rec
-end
-
-function shared_utils.add_player_context_if_missing(rec, player)
-  -- Add player context for location-based events if not already present
-  if not rec.x and not rec.y and player then
-    local ctx = shared_utils.get_player_context(player)
-    rec.x = ctx.px
-    rec.y = ctx.py
-  end
 end
 
 -- ============================================================================

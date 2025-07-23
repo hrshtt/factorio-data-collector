@@ -30,12 +30,26 @@ end
 
 -- Helper function to create a collated movement record
 local function create_collated_record(player, direction_name, start_tick, end_tick, start_pos, end_pos)
-  local rec = shared_utils.create_base_record("move_to_collated", {
+  local rec = shared_utils.create_base_record("move_to_direction", {
     tick = end_tick,
     -- position = end_pos
   }, player)
+
+  rec.player.x = nil
+  rec.player.y = nil
+
+  rec.player.start_movement = {
+    tick = start_tick,
+    x = string.format("%.1f", start_pos.x),
+    y = string.format("%.1f", start_pos.y)
+  }
+
+  rec.player.end_movement = { 
+    tick = end_tick,
+    x = string.format("%.1f", end_pos.x),
+    y = string.format("%.1f", end_pos.y)
+  }
   
-  rec.action = "move_to_collated"
   rec.direction = direction_name
   rec.duration_ticks = end_tick - start_tick
   -- Calculate distance moved
@@ -43,19 +57,6 @@ local function create_collated_record(player, direction_name, start_tick, end_ti
   local dy = end_pos.y - start_pos.y
   rec.distance = string.format("%.1f", math.sqrt(dx * dx + dy * dy))
   
-  rec.movement_start = {
-    tick = start_tick,
-    x = string.format("%.1f", start_pos.x),
-    y = string.format("%.1f", start_pos.y)
-  }
-
-  rec.movement_end = {
-    tick = end_tick,
-    x = string.format("%.1f", end_pos.x),
-    y = string.format("%.1f", end_pos.y)
-  }
-  
-  shared_utils.add_player_context_if_missing(rec, player)
   return rec
 end
 

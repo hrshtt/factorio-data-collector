@@ -171,18 +171,16 @@ function harvest_module.register_events(event_dispatcher)
   ----------------------------------------------------------------
   event_dispatcher.register_handler(defines.events.on_player_mined_tile, function(event)
     if not util.is_player_event(event) then return end
+
+    local rec = util.create_base_record("harvest_resource_collated", event, player)
     
     -- Tiles don't follow the same pre/post pattern, log immediately
-    local rec = {
-      tick = event.tick,
-      player_index = event.player_index,
-      action = "harvest_resource_collated",
-      type = "tile",
-      tiles = event.tiles or {},
-      start_tick = event.tick,  -- For tiles, start and end are the same
-      end_tick = event.tick,
-      duration_ticks = 0
-    }
+    rec.type = "tile"
+    rec.tiles = event.tiles or {}
+    rec.start_tick = event.tick  -- For tiles, start and end are the same
+    rec.end_tick = event.tick
+    rec.duration_ticks = 0
+    
     local line = game.table_to_json(rec)
     util.buffer_event("harvest_resource_collated", line)
   end)
