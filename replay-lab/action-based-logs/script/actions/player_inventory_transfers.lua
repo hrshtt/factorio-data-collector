@@ -178,14 +178,20 @@ function cursor_stack_logic.on_player_cursor_stack_changed(event)
   
   local player = game.players[event.player_index]
   if not player or not player.valid then return end
+
+  -- Check if we have a selected entity that's player accessible
+  local selected_entity = player.selected
+  if not selected_entity then return end
+  if not logistics.is_player_accessible(selected_entity) then return end
   
   local context = shared_utils.get_player_context(player)
+  if not context.cursor_item then return end
   
   -- Get previous cursor state
-  local prev_state = cursor_states[event.player_index]
+  local prev_state = cursor_states[tostring(event.player_index)..context.cursor_item]
   
   -- Store current state
-  cursor_states[event.player_index] = {
+  cursor_states[tostring(event.player_index)..context.cursor_item] = {
     cursor_item = context.cursor_item,
     cursor_count = context.cursor_count or 0,
     selected = context.selected,
@@ -195,21 +201,24 @@ function cursor_stack_logic.on_player_cursor_stack_changed(event)
   }
   
   -- If we don't have a previous state, just return
-  if not prev_state then return end
-  
-  -- Check if we have a selected entity that's player accessible
-  local selected_entity = player.selected
-  if not selected_entity or not selected_entity.valid then return end
-  if not logistics.is_player_accessible(selected_entity) then return end
-  
+  if not prev_state then
+    -- log first insert
+    -- local item_deltas = {[context.cursor_item] = 1}
+    -- local rec = create_transfer_record(player, "insert_item", selected_entity, item_deltas, "on_player_cursor_stack_changed", false)
+      
+    -- local clean_rec = shared_utils.clean_record(rec)
+    -- local line = game.table_to_json(clean_rec)
+    -- shared_utils.buffer_event("player_inventory_transfers", line)
+    return
+  end
   -- Check if cursor item is the same and count decreased by exactly 1
-  if prev_state.cursor_item == context.cursor_item and
-     prev_state.cursor_item and
-     prev_state.cursor_count and context.cursor_count and
-     prev_state.cursor_count - context.cursor_count == 1 and
-     prev_state.selected == context.selected and
-     prev_state.selected_x == context.selected_x and
-     prev_state.selected_y == context.selected_y then
+  -- if prev_state.cursor_item == context.cursor_item and
+  --    prev_state.cursor_item and
+  --    prev_state.cursor_count and context.cursor_count and
+  --    prev_state.cursor_count - context.cursor_count == 1 and
+  --    prev_state.selected == context.selected and
+  --    prev_state.selected_x == context.selected_x and
+  --    prev_state.selected_y == context.selected_y then
     
     -- Make sure it's an insertable item (not a building or equipment)
     if logistics.can_be_inserted(context.cursor_item) then
@@ -221,7 +230,7 @@ function cursor_stack_logic.on_player_cursor_stack_changed(event)
       local line = game.table_to_json(clean_rec)
       shared_utils.buffer_event("player_inventory_transfers", line)
     end
-  end
+  -- end
 end
 
 function cursor_stack_logic.on_player_left_game(event)
@@ -274,7 +283,6 @@ function gui_transfer_logic.register_events(event_dispatcher)
     -- record "before" snapshots
     sess.start_entity_snapshot = logistics.get_combined_inventory_contents(entity)
     sess.start_player_snapshot = logistics.get_player_inventory_contents(player)
-    log("on_gui_opened" .. game.table_to_json(sess.start_entity_snapshot) .. game.table_to_json(sess.start_player_snapshot))
   end)
 
   ----------------------------------------------------------------
@@ -314,18 +322,13 @@ function gui_transfer_logic.register_events(event_dispatcher)
     local end_entity = logistics.get_combined_inventory_contents(entity)
     local end_player = logistics.get_player_inventory_contents(player)
 
-    log("on_gui_closed" .. game.table_to_json(end_entity) .. game.table_to_json(end_player))
-
     -- compute raw deltas
     local entity_deltas = logistics.diff_tables(sess.start_entity_snapshot, end_entity)
     local player_deltas = logistics.diff_tables(sess.start_player_snapshot, end_player)
 
-    log("deltas" .. game.table_to_json(entity_deltas) .. game.table_to_json(player_deltas))
-    log("remove_items" .. game.table_to_json(sess.remove_items))
-
     -- subtract out anything the player crafted
     for item, cnt in pairs(sess.remove_items) do
-      player_deltas[item] = (player_deltas[item] or 0) + cnt
+      player_deltas[item] = (player_deltas[item] or 0) - cnt
     end
 
     -- handle extractions (negative deltas)

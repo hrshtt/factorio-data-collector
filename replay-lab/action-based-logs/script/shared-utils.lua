@@ -45,7 +45,7 @@ function shared_utils.get_player_context(player)
   
   -- What the player is currently doing
   if player.selected then
-    context.selected = player.selected.name
+    context.selected = player.selected
     context.selected_x = string.format("%.1f", player.selected.position.x)
     context.selected_y = string.format("%.1f", player.selected.position.y)
   end
