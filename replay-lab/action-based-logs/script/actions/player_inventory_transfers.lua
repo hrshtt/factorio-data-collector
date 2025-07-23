@@ -233,146 +233,119 @@ end
 -- =========================
 local gui_transfer_logic = {}
 
--- Storage for tracking GUI sessions
-local gui_sessions = {}
+-- make sure the global table exists
+global.partial_gui = global.partial_gui or {}
 
-function gui_transfer_logic.on_gui_opened(event)
-  if not shared_utils.is_player_event(event) then return end
-  
-  local player = game.players[event.player_index]
-  if not player or not player.valid then return end
-  
-  -- Only track entity GUIs
-  if event.gui_type ~= defines.gui_type.entity then return end
-  
-  local entity = event.entity
-  if not entity or not entity.valid then return end
-  
-  -- Only track player-accessible entities
-  if not logistics.is_player_accessible(entity) then return end
-  
-  -- Get combined inventory snapshot and cursor state
-  local entity_inventory = logistics.get_combined_inventory_contents(entity)
-  local cursor_stack = player.cursor_stack
-  local cursor_item = cursor_stack and cursor_stack.valid_for_read and cursor_stack.name or nil
-  local cursor_count = cursor_stack and cursor_stack.valid_for_read and cursor_stack.count or 0
-  
-  -- Create GUI session
-  gui_sessions[event.player_index] = {
-    entity = entity,
-    last_entity_inv = entity_inventory,
-    last_cursor_item = cursor_item,
-    last_cursor_count = cursor_count,
-    last_tick_logged = 0,
-    opened_tick = event.tick
+local function assure_partial_gui(player_index)
+  -- create a fresh session object
+  global.partial_gui[player_index] = {
+    -- will hold { [item_name] = count, ... } for craft events
+    remove_items = {},
+    -- will be filled on open
+    start_entity_snapshot = {},
+    start_player_snapshot = {},
   }
 end
 
-function gui_transfer_logic.on_gui_closed(event)
-  if not shared_utils.is_player_event(event) then return end
-  
-  -- Clear GUI session for this player
-  gui_sessions[event.player_index] = nil
-end
+function gui_transfer_logic.register_events(event_dispatcher)
+  ----------------------------------------------------------------
+  -- (1) on open: snapshot both entity & player inventories
+  ----------------------------------------------------------------
+  event_dispatcher.register_handler(defines.events.on_gui_opened, function(event)
+    if not shared_utils.is_player_event(event) then return end
 
-function gui_transfer_logic.on_player_cursor_stack_changed(event)
-  if not shared_utils.is_player_event(event) then return end
-  
-  local player = game.players[event.player_index]
-  if not player or not player.valid then return end
-  
-  -- Check if we have an active GUI session
-  local session = gui_sessions[event.player_index]
-  if not session then return end
-  
-  local entity = session.entity
-  if not entity or not entity.valid then
-    -- Clean up invalid session
-    gui_sessions[event.player_index] = nil
-    return
-  end
-  
-  -- Duplicate suppression: prevent double-logging with fast transfers
-  if event.tick == session.last_tick_logged then return end
-  
-  -- Get current cursor state
-  local cursor_stack = player.cursor_stack
-  local cursor_item = cursor_stack and cursor_stack.valid_for_read and cursor_stack.name or nil
-  local cursor_count = cursor_stack and cursor_stack.valid_for_read and cursor_stack.count or 0
-  
-  -- Get current entity inventory state
-  local current_entity_inv = logistics.get_combined_inventory_contents(entity)
-  local entity_delta = logistics.diff_tables(session.last_entity_inv, current_entity_inv)
-  
-  -- If no entity inventory change, ignore (filters out crafting, bot deliveries, etc.)
-  if next(entity_delta) == nil then
-    -- Update cursor state for next comparison
-    session.last_cursor_item = cursor_item
-    session.last_cursor_count = cursor_count
-    return
-  end
-  
-  -- Determine transfer direction based on cursor count change
-  local cursor_count_delta = cursor_count - session.last_cursor_count
-  local action_type = nil
-  
-  if cursor_count_delta < 0 then
-    -- Cursor count decreased -> player put items into entity
-    action_type = "insert_item"
-  elseif cursor_count_delta > 0 then
-    -- Cursor count increased -> player took items from entity
-    action_type = "extract_item"
-  else
-    -- Cursor count unchanged, use entity delta sign to determine direction
-    -- Positive delta in entity = items added = insert_item
-    -- Negative delta in entity = items removed = extract_item
-    local total_entity_delta = 0
-    for _, delta in pairs(entity_delta) do
-      total_entity_delta = total_entity_delta + delta
-    end
-    
-    if total_entity_delta > 0 then
-      action_type = "insert_item"
-    elseif total_entity_delta < 0 then
-      action_type = "extract_item"
-    else
-      -- No net change, skip logging
-      session.last_entity_inv = current_entity_inv
-      session.last_cursor_item = cursor_item
-      session.last_cursor_count = cursor_count
+    local player_idx = event.player_index
+    local player      = game.players[player_idx]
+    local entity      = event.entity
+    -- only track real entity GUIs
+    if not (entity and entity.valid and logistics.is_player_accessible(entity)) then
+      global.partial_gui[player_idx] = nil
       return
     end
-  end
-  
-  -- Create and log the transfer record
-  local rec = create_transfer_record(player, action_type, entity, entity_delta, "gui_transfer", false)
-  local clean_rec = shared_utils.clean_record(rec)
-  local line = game.table_to_json(clean_rec)
-  shared_utils.buffer_event("player_inventory_transfers", line)
-  
-  -- Update session state
-  session.last_entity_inv = current_entity_inv
-  session.last_cursor_item = cursor_item
-  session.last_cursor_count = cursor_count
-  session.last_tick_logged = event.tick
-end
 
-function gui_transfer_logic.on_player_left_game(event)
-  -- Clean up GUI session for player
-  gui_sessions[event.player_index] = nil
-end
+    -- start a fresh session
+    assure_partial_gui(player_idx)
+    local sess = global.partial_gui[player_idx]
 
-function gui_transfer_logic.cleanup_old_sessions()
-  local current_tick = game.tick
-  local timeout_ticks = 300
-  
-  for player_index, session in pairs(gui_sessions) do
-    if (current_tick - session.opened_tick) >= timeout_ticks then
-      -- Timeout - clean up session
-      gui_sessions[player_index] = nil
+    -- record “before” snapshots
+    sess.start_entity_snapshot = logistics.get_combined_inventory_contents(entity)
+    sess.start_player_snapshot = logistics.get_combined_inventory_contents(player)
+  end)
+
+  ----------------------------------------------------------------
+  -- (2) capture any crafting that happens while the GUI is open
+  ----------------------------------------------------------------
+  event_dispatcher.register_handler(defines.events.on_player_crafted_item, function(event)
+    if not shared_utils.is_player_event(event) then return end
+    local sess = global.partial_gui[event.player_index]
+    if not sess then return end
+
+    -- fall back to event.item_name/count if event.item_stack is nil
+    local name  = (event.item_stack and event.item_stack.name) or event.item_name
+    local count = (event.item_stack and event.item_stack.count) or event.item_count or 0
+
+    sess.remove_items[name] = (sess.remove_items[name] or 0) + count
+  end)
+
+  ----------------------------------------------------------------
+  -- (3) on close: take “after” snapshots, diff, adjust, emit
+  ----------------------------------------------------------------
+  event_dispatcher.register_handler(defines.events.on_gui_closed, function(event)
+    if not shared_utils.is_player_event(event) then return end
+
+    local player_idx = event.player_index
+    local sess       = global.partial_gui[player_idx]
+    local player     = game.players[player_idx]
+    local entity     = event.entity
+
+    if not (sess and entity and entity.valid) then
+      global.partial_gui[player_idx] = nil
+      return
     end
-  end
+
+    -- take “after” snapshots
+    local end_entity = logistics.get_combined_inventory_contents(entity)
+    local end_player = logistics.get_combined_inventory_contents(player)
+
+    -- compute raw deltas
+    local entity_deltas = logistics.diff_tables(sess.start_entity_snapshot, end_entity)
+    local player_deltas = logistics.diff_tables(sess.start_player_snapshot, end_player)
+
+    -- subtract out anything the player crafted
+    for item, cnt in pairs(sess.remove_items) do
+      player_deltas[item] = (player_deltas[item] or 0) - cnt
+    end
+
+    -- build the transfer map: items removed from entity → positive extraction
+    local transfer = {}
+    for item, delta in pairs(entity_deltas) do
+      if delta < 0 then
+        transfer[item] = -delta
+      end
+    end
+
+    if next(transfer) then
+      local rec = create_transfer_record(
+        player,
+        "extract_item",
+        entity,
+        transfer,
+        "on_gui_closed",
+        false
+      )
+      -- if you want to inspect player_deltas too, you can stick them on the record:
+      rec.player_deltas = player_deltas
+      rec.entity_deltas = entity_deltas
+
+      local clean_rec = shared_utils.clean_record(rec)
+      shared_utils.buffer_event("player_inventory_transfers", game.table_to_json(clean_rec))
+    end
+
+    -- clear session
+    global.partial_gui[player_idx] = nil
+  end)
 end
+
 
 -- =========================
 -- Registration & Module API
@@ -392,7 +365,8 @@ function player_inventory_transfers.register_events(event_dispatcher)
   -- Register the GUI transfer events
   event_dispatcher.register_handler(defines.events.on_gui_opened, gui_transfer_logic.on_gui_opened)
   event_dispatcher.register_handler(defines.events.on_gui_closed, gui_transfer_logic.on_gui_closed)
-  event_dispatcher.register_handler(defines.events.on_player_cursor_stack_changed, gui_transfer_logic.on_player_cursor_stack_changed)
+  -- event_dispatcher.register_handler(defines.events.on_player_cursor_stack_changed, gui_transfer_logic.on_player_cursor_stack_changed)
+  event_dispatcher.register_handler(defines.events.on_player_crafted_item, gui_transfer_logic.on_player_crafted_item)
   event_dispatcher.register_handler(defines.events.on_player_left_game, gui_transfer_logic.on_player_left_game)
   event_dispatcher.register_nth_tick_handler(300, gui_transfer_logic.cleanup_old_sessions)
 end

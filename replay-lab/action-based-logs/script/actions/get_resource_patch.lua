@@ -11,4 +11,4 @@ function get_resource_patch.register_events(event_dispatcher)
   -- This module doesn't register any events - it's called by other modules
 end
 
-return get_resource_patch 
+return get_resource_patch
