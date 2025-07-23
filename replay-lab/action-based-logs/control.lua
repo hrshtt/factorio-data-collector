@@ -253,7 +253,7 @@ function main.register_system_handlers()
     end
     
     -- Process collated harvest resource events
-    harvest_resource_collated.process_partial_mining(event)
+    -- harvest_resource_collated.process_partial_mining(event)
   end)
 
   -- Replay end detection when player leaves
