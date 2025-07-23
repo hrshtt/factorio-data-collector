@@ -51,10 +51,10 @@ function harvest_module.register_events(event_dispatcher)
         type = event.last_entity.type
       }
       if key(event) ~= rec.key then
-        global.partial_mine = {}
+        global.partial_mine = nil
       end
     else
-      global.partial_mine = {}
+      global.partial_mine = nil
     end
   end)
 
@@ -65,20 +65,16 @@ function harvest_module.register_events(event_dispatcher)
     if not util.is_player_event(event) then return end
     
     local mining_record = global.partial_mine
-    if mining_record then
-      if not mining_record.entity then 
-        mining_record.entity = {
-          name = event.entity.name,
-          position = event.entity.position,
-          type = event.entity.type,
-        }
-        mining_record.start_tick = event.tick
-      end
-      mining_record.entity.mined = true
-      mining_record.entity.type = event.entity and event.entity.type
-      mining_record.end_tick = event.tick
-      mining_record.items = {}
+    if not mining_record then
+      local player = game.players[event.player_index]
+      mining_record = util.create_base_record("harvest_resource_collated", event, player)
+      mining_record.start_tick = event.tick
+      mining_record.key = key(event)
     end
+    mining_record.entity.mined = true
+    mining_record.entity.type = event.entity and event.entity.type
+    mining_record.end_tick = event.tick
+    mining_record.items = {}
     global.partial_mine = mining_record
   end)
 

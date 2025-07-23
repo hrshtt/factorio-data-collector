@@ -95,12 +95,12 @@ function shared_utils.create_base_record(action_name, e, player)
   
   -- Add entity info if available
   if e.entity then
-    rec.entity = {}
-    rec.entity.name = shared_utils.get_entity_info(e.entity)
-    if e.entity.position then
-      rec.entity.x = string.format("%.1f", e.entity.position.x)
-      rec.entity.y = string.format("%.1f", e.entity.position.y)
-    end
+    rec.entity = {
+      name = e.entity.name,
+      x = string.format("%.1f", e.entity.position.x),
+      y = string.format("%.1f", e.entity.position.y),
+      type = e.entity.type,
+    }
   end
   
   -- Add item/stack info if available
