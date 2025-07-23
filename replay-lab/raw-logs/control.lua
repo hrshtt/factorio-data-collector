@@ -68,20 +68,31 @@ function raw_logger.log_event(event_name, event_data)
     if player and player.valid then
       -- Add player context
       local ctx = shared_utils.get_player_context(player)
-      for k, v in pairs(ctx) do
-        event_data["player_" .. k] = v
+      if ctx.selected_entity then
+        event_data.selected_entity = ctx.selected_entity
+        ctx.selected_entity = nil
       end
+      event_data.player = ctx
+      event_data.player.index = event_data.player_index
     end
   end
   
   -- Add entity name if entity exists
   if event_data.entity then
-    event_data.entity_name = shared_utils.get_entity_info(event_data.entity)
+    event_data.entity = {
+      name = event_data.entity.name,
+      position = event_data.entity.position,
+      type = event_data.entity.type
+    }
   end
 
   -- Add last_entity name if last_entity exists (for on_selected_entity_changed)
   if event_data.last_entity then
-    event_data.last_entity = shared_utils.get_entity_info(event_data.last_entity)
+    event_data.last_entity = {
+      name = event_data.last_entity.name,
+      position = event_data.last_entity.position,
+      type = event_data.last_entity.type
+    }
   end
   
   -- Add item info if stack exists
@@ -105,11 +116,8 @@ function raw_logger.log_event(event_name, event_data)
       -- Only add entries if the defines actually exist
       if defines.gui_type then
         if defines.gui_type.achievement then gui_type_names[defines.gui_type.achievement] = "achievement" end
-        if defines.gui_type.blueprint_book then gui_type_names[defines.gui_type.blueprint_book] = "blueprint_book" end
         if defines.gui_type.blueprint_library then gui_type_names[defines.gui_type.blueprint_library] = "blueprint_library" end
-        if defines.gui_type.blueprint_setup then gui_type_names[defines.gui_type.blueprint_setup] = "blueprint_setup" end
         if defines.gui_type.bonus then gui_type_names[defines.gui_type.bonus] = "bonus" end
-        if defines.gui_type.character then gui_type_names[defines.gui_type.character] = "character" end
         if defines.gui_type.controller then gui_type_names[defines.gui_type.controller] = "controller" end
         if defines.gui_type.custom then gui_type_names[defines.gui_type.custom] = "custom" end
         if defines.gui_type.entity then gui_type_names[defines.gui_type.entity] = "entity" end
@@ -123,8 +131,6 @@ function raw_logger.log_event(event_name, event_data)
         if defines.gui_type.research then gui_type_names[defines.gui_type.research] = "research" end
         if defines.gui_type.server_management then gui_type_names[defines.gui_type.server_management] = "server_management" end
         if defines.gui_type.tile then gui_type_names[defines.gui_type.tile] = "tile" end
-        if defines.gui_type.train then gui_type_names[defines.gui_type.train] = "train" end
-        if defines.gui_type.tutorial then gui_type_names[defines.gui_type.tutorial] = "tutorial" end
       end
       
       -- Safe lookup with fallback
@@ -181,13 +187,50 @@ function raw_logger.log_event(event_name, event_data)
   end
   
   -- Format position if available
-  if event_data.position then
-    event_data.pos_x = string.format("%.1f", event_data.position.x)
-    event_data.pos_y = string.format("%.1f", event_data.position.y)
-  end
+  -- if event_data.position then
+  --   event_data.pos_x = string.format("%.1f", event_data.position.x)
+  --   event_data.pos_y = string.format("%.1f", event_data.position.y)
+  -- end
   
   -- Convert event data to JSON and log it
-  local line = game.table_to_json(event_data)
+  event_data.player_index = nil
+  
+  -- Define priority order for keys
+  local priority_keys = {
+    "tick", "event_name", "entity", "selected_entity", "last_entity", "player"
+  }
+  
+  local sorted_event_data = {}
+  local remaining_keys = {}
+  
+  -- Add priority keys first (only if they exist)
+  for _, key in ipairs(priority_keys) do
+    if event_data[key] ~= nil then
+      sorted_event_data[key] = event_data[key]
+    end
+  end
+  
+  -- Add remaining keys in alphabetical order
+  for key in pairs(event_data) do
+    local is_priority = false
+    for _, priority_key in ipairs(priority_keys) do
+      if key == priority_key then
+        is_priority = true
+        break
+      end
+    end
+    
+    if not is_priority then
+      table.insert(remaining_keys, key)
+    end
+  end
+  
+  table.sort(remaining_keys)
+  for _, key in ipairs(remaining_keys) do
+    sorted_event_data[key] = event_data[key]
+  end
+  
+  local line = game.table_to_json(sorted_event_data)
   shared_utils.buffer_event("raw_events", line)
 end
 

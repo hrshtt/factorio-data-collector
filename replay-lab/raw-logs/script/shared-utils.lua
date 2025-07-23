@@ -39,15 +39,16 @@ function shared_utils.get_player_context(player)
   
   -- Current position (rounded for cleaner logs)
   if player.position then
-    context.px = string.format("%.1f", player.position.x)
-    context.py = string.format("%.1f", player.position.y)
+    context.position = player.position
   end
   
   -- What the player is currently doing
   if player.selected then
-    context.selected = player.selected.name
-    context.selected_x = string.format("%.1f", player.selected.position.x)
-    context.selected_y = string.format("%.1f", player.selected.position.y)
+    context.selected_entity = {
+      name = player.selected.name,
+      position = player.selected.position,
+      type = player.selected.type
+    }
   end
   
   return context
