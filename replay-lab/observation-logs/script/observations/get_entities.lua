@@ -37,7 +37,7 @@ local function get_entities(player_index, radius, entity_names_json, position_x,
             table.insert(result, serialized)
         end
     end
-    return result
+    return dump(result)
 end
 
 M.get_entities = get_entities
