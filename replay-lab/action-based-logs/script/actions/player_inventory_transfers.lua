@@ -39,6 +39,7 @@ local current_sessions = {}
 local function create_transfer_record(player, action_type, entity, item_deltas, event_name, is_no_op)
   local rec = shared_utils.create_base_record(action_type, {
     tick = game.tick,
+    player_index = player.index,
   }, player)
   
   rec.entity = {}

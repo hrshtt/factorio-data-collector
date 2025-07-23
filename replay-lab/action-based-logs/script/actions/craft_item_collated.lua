@@ -19,6 +19,7 @@ end
 local function create_collated_record(player, recipe_name, start_tick, end_tick, total_queued, total_crafted, total_cancelled, craft_timings)
   local rec = shared_utils.create_base_record("craft_item", {
     tick = end_tick,
+    player_index = player.index,
   }, player)
 
   rec.timing = {

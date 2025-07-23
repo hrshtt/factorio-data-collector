@@ -32,7 +32,7 @@ end
 local function create_collated_record(player, direction_name, start_tick, end_tick, start_pos, end_pos)
   local rec = shared_utils.create_base_record("move_to_direction", {
     tick = end_tick,
-    -- position = end_pos
+    player_index = player.index,
   }, player)
 
   rec.player.x = nil
