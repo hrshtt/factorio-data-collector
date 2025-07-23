@@ -381,4 +381,38 @@ function logistics.can_be_inserted(item_name)
  end
 -- Helper function to get inventory contents as a table
 
+-- ============================================================================
+-- PLAYER INVENTORY SNAPSHOT
+-- ============================================================================
+
+--- Returns a flat table of all items in the given player’s inventories:
+--- main, guns, ammo, armor, and trash.
+--- @param player LuaPlayer
+--- @treturn table<string, uint>  item_name → count
+function logistics.get_player_inventory_contents(player)
+  if not (player and player.valid) then return {} end
+
+  local combined = {}
+  -- these indices exist in 1.1.110
+  local inv_types = {
+    defines.inventory.character_main,
+    defines.inventory.character_guns,
+    defines.inventory.character_ammo,
+    defines.inventory.character_armor,
+    defines.inventory.character_trash,
+  }
+
+  for _, inv_idx in ipairs(inv_types) do
+    local inv = player.get_inventory(inv_idx)
+    if inv and inv.valid then
+      local contents = inv.get_contents()
+      for item_name, count in pairs(contents) do
+        combined[item_name] = (combined[item_name] or 0) + count
+      end
+    end
+  end
+
+  return combined
+end
+
 return logistics
