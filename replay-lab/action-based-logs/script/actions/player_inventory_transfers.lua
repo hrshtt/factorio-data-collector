@@ -171,26 +171,81 @@ end
 local cursor_stack_logic = {}
 
 -- Storage for tracking cursor states
-local cursor_states = {}
+-- local cursor_states = {}
+global.item_counts = {}
+
+local function set_item_count(player_index, item_name, count)
+  if not global.item_counts[player_index] then
+    global.item_counts[player_index] = {}
+  end
+  global.item_counts[player_index][item_name] = count
+end
+
+local function get_item_count(player_index, item_name)
+  if not global.item_counts[player_index] or not global.item_counts[player_index][item_name] then
+    return nil
+  end
+  return global.item_counts[player_index][item_name] or 0
+end
 
 function cursor_stack_logic.on_player_cursor_stack_changed(event)
+  local verbose = false
   if not shared_utils.is_player_event(event) then return end
 
   local player = game.players[event.player_index]
   if not player or not player.valid then return end
 
   -- Check if we have a selected entity that's player accessible
-  local selected_entity = player.selected
-  if not selected_entity then return end
-  if not logistics.is_player_accessible(selected_entity) then return end
 
   local context = shared_utils.get_player_context(player)
+  local selected_entity = context.selected
   if not context.cursor_item then return end
+  if not selected_entity then return end
+  if not logistics.is_player_accessible(selected_entity) then return end
   if not  logistics.can_be_inserted(context.cursor_item) then return end
 
+  -- Additional validation to ensure entity is still valid and accessible
+  if not selected_entity.valid then return end
+  if not logistics.is_player_accessible(selected_entity) then return end
+
+  local p_inventory = logistics.get_player_inventory_contents(player)
+
+  
+  if verbose then
+    local debug = {tick = event.tick}
+    -- Store entity info in a way that can be serialized to JSON
+
+    local name = selected_entity.name
+    local x = string.format("%.1f", selected_entity.position.x)
+    local y = string.format("%.1f", selected_entity.position.y)
+    debug.selected_entity = name .. " (" .. x .. ", " .. y .. ")"
+    debug.cursor = {
+      [context.cursor_item] = context.cursor_count,
+    }
+    debug.p_inventory = p_inventory
+    debug.e_inventory = logistics.get_combined_inventory_contents(selected_entity)
+
+    log(game.table_to_json(debug))
+  end
+
+  local current_item_count = (p_inventory[context.cursor_item] or 0) + context.cursor_count
+  local previous_item_count = get_item_count(event.player_index, context.cursor_item)
+  set_item_count(event.player_index, context.cursor_item, current_item_count)
+
+  -- if the item count is not set, return
+  if not previous_item_count then return end
+  
+  -- calculate the item delta
+  local item_delta = current_item_count - previous_item_count
+
+  -- if the item delta is less than -2, its not part of the Z press event tracking
+  -- if the item delta is more than 0, means item was sourced from somewhere else
+  if item_delta < -2 or item_delta >= 0 then return end
+  
   -- Create insert_item record using the helper function
-  local item_deltas = { [context.cursor_item] = 1 }
-  local rec = create_transfer_record(player, "insert_item", selected_entity, item_deltas,
+  local rec = create_transfer_record(player, "insert_item", selected_entity, {
+    [context.cursor_item] = item_delta,
+  },
     "on_player_cursor_stack_changed", false)
 
   local clean_rec = shared_utils.clean_record(rec)

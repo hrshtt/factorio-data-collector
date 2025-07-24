@@ -117,9 +117,9 @@ function logistics.get_player_inventory_contents(player)
   local combined = {}
   for _, idx in ipairs({
     defines.inventory.character_main,
-    defines.inventory.character_guns,
-    defines.inventory.character_ammo,
-    defines.inventory.character_armor,
+    -- defines.inventory.character_guns, -- enable when not in peaceful mode
+    -- defines.inventory.character_ammo, -- enable when not in peaceful mode
+    -- defines.inventory.character_armor, -- enable when not in peaceful mode
     defines.inventory.character_trash,
   }) do
     local inv = player.get_inventory(idx)
