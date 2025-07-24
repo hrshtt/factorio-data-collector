@@ -263,140 +263,65 @@ end
 -- =========================
 local gui_transfer_logic = {}
 
-local function assure_partial_gui(player_index)
-  -- create a fresh session object
-  if not global.gui_sessions then
-    global.gui_sessions = {}
-  end
-  global.gui_sessions[player_index] = {
-    -- will hold { [item_name] = count, ... } for craft events
-    remove_items = {},
-    -- will be filled on open
-    start_entity_snapshot = {},
-    start_player_snapshot = {},
+-- instead of taking just the index, we pass in the LuaPlayer and the entity
+local function assure_partial_gui(idx, player, entity)
+  global.gui_sessions = global.gui_sessions or {}
+  global.gui_sessions[idx] = {
+    craft = {},                          -- will collect on_player_crafted_item
+    snap  = logistics.gui_snapshot(player, entity),  -- player + inputs + outputs
   }
 end
 
+-- in your GUI module, replace everything in register_events with:
+
 function gui_transfer_logic.register_events(event_dispatcher)
-  ----------------------------------------------------------------
-  -- (1) on open: snapshot both entity & player inventories
-  ----------------------------------------------------------------
-  event_dispatcher.register_handler(defines.events.on_gui_opened, function(event)
-    -- ensure it really was an "entity" GUI
-    if event.gui_type ~= defines.gui_type.entity then return end
+  -- open: snapshot
+  event_dispatcher.register_handler(defines.events.on_gui_opened, function(ev)
+    assure_partial_gui(ev.player_index)
+    if ev.gui_type ~= defines.gui_type.entity then return end
+    local p = game.get_player(ev.player_index)
+    global.gui_sessions = global.gui_sessions or {}
+    global.gui_sessions[p.index] = {
+      snap   = logistics.gui_snapshot(p, ev.entity),
+      craft  = {}
+    }
 
-    local player_idx = event.player_index or (event.player and event.player.index)
-    if not player_idx then return end
-
-    -- pull the real entity out of whichever field is populated
-    local entity = event.entity or event.selected_entity
-    if not (entity and entity.valid and logistics.is_player_accessible(entity)) then
-      global.gui_sessions[player_idx] = nil
-      return
-    end
-
-    -- now we can start our session safely
-    assure_partial_gui(player_idx)
-    local sess = global.gui_sessions[player_idx]
-    local player = game.players[player_idx]
-
-    -- record "before" snapshots
-    sess.start_entity_snapshot = logistics.get_combined_inventory_contents(entity)
-    sess.start_player_snapshot = logistics.get_player_inventory_contents(player)
+    assure_partial_gui(ev.player_index, p, ev.entity)
   end)
 
-  ----------------------------------------------------------------
-  -- (2) capture any crafting that happens while the GUI is open
-  ----------------------------------------------------------------
-  event_dispatcher.register_handler(defines.events.on_player_crafted_item, function(event)
-    local player_idx = event.player_index or (event.player and event.player.index)
-    if not player_idx then return end
-    if not global.gui_sessions then return end
-
-    local sess = global.gui_sessions[player_idx]
-    if not sess then return end
-
-    -- fall back to event.item_name/count if event.item_stack is nil
-    local name              = (event.item_stack and event.item_stack.name) or event.item_name
-    local count             = (event.item_stack and event.item_stack.count) or event.item_count or 0
-
-    sess.remove_items[name] = (sess.remove_items[name] or 0) + count
+  -- crafting: record so we can ignore those items
+  event_dispatcher.register_handler(defines.events.on_player_crafted_item, function(ev)
+    local s = global.gui_sessions[ev.player_index]; if not s then return end
+    local name  = (ev.item_stack and ev.item_stack.name)  or ev.item_name
+    local count = (ev.item_stack and ev.item_stack.count) or ev.item_count or 0
+    s.craft[name] = (s.craft[name] or 0) + count
   end)
 
-  ----------------------------------------------------------------
-  -- (3) on close: take “after” snapshots, diff, adjust, emit
-  ----------------------------------------------------------------
-  event_dispatcher.register_handler(defines.events.on_gui_closed, function(event)
-    -- ensure it really was an "entity" GUI
-    if event.gui_type ~= defines.gui_type.entity then return end
+  -- close: compute & emit
+  event_dispatcher.register_handler(defines.events.on_gui_closed, function(ev)
+    if ev.gui_type ~= defines.gui_type.entity then return end
+    local idx = ev.player_index
+    local session = global.gui_sessions and global.gui_sessions[idx]; if not session then return end
+    local p, e = game.players[idx], ev.entity
+    local after   = logistics.gui_snapshot(p, e)
+    local Xfers   = logistics.gui_compute_transfers(session.snap, after, session.craft)
 
-    local player_idx = event.player_index or (event.player and event.player.index)
-    if not player_idx then return end
-    if not global.gui_sessions[player_idx] then return end
+    -- now Xfers.inserted / extracted are exactly what the player moved;
+    -- Xfers.machine_consumed / produced tell you the machine’s internal change.
 
-    local sess          = global.gui_sessions[player_idx]
-    local player        = game.players[player_idx]
-    local entity        = event.entity
-
-    -- take “after” snapshots
-    local end_entity    = logistics.get_combined_inventory_contents(entity)
-    local end_player    = logistics.get_player_inventory_contents(player)
-
-    -- compute raw deltas
-    local entity_deltas = logistics.diff_tables(sess.start_entity_snapshot, end_entity)
-    local player_deltas = logistics.diff_tables(sess.start_player_snapshot, end_player)
-
-    -- subtract out anything the player crafted
-    for item, cnt in pairs(sess.remove_items) do
-      player_deltas[item] = (player_deltas[item] or 0) - cnt
-    end
-
-    -- handle extractions (negative deltas)
-    local extract_map = {}
-    for item, delta in pairs(entity_deltas) do
-      if delta < 0 then
-        extract_map[item] = -delta
-      end
-    end
-    if next(extract_map) then
-      local rec = create_transfer_record(
-        player,
-        "extract_item",
-        entity,
-        extract_map,
-        "on_gui_closed",
-        false
+    -- example: emit only non-empty maps
+    if next(Xfers.inserted) then
+      shared_utils.buffer_event("player_inventory_transfers",
+        game.table_to_json(create_transfer_record(p, "insert_item", e, Xfers.inserted, "on_gui_closed"))
       )
-      -- if you want to inspect player_deltas too, you can stick them on the record:
-      rec.player_deltas = player_deltas
-      rec.entity_deltas = entity_deltas
-
-      local clean_rec = shared_utils.clean_record(rec)
-      shared_utils.buffer_event("player_inventory_transfers", game.table_to_json(clean_rec))
     end
-
-    -- handle insertions (positive deltas)
-    local insert_map = {}
-    for item, delta in pairs(entity_deltas) do
-      if delta > 0 then
-        insert_map[item] = delta
-      end
-    end
-    if next(insert_map) then
-      local rec = create_transfer_record(
-        player,
-        "insert_item",
-        entity,
-        insert_map,
-        "on_gui_closed",
-        false
+    if next(Xfers.extracted) then
+      shared_utils.buffer_event("player_inventory_transfers",
+        game.table_to_json(create_transfer_record(p, "extract_item", e, Xfers.extracted, "on_gui_closed"))
       )
-      local clean_rec = shared_utils.clean_record(rec)
-      shared_utils.buffer_event("player_inventory_transfers", game.table_to_json(clean_rec))
     end
 
-    -- clear session
-    global.gui_sessions[player_idx] = nil
+    global.gui_sessions[idx] = nil
   end)
 end
 

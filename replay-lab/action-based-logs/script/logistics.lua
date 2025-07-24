@@ -99,6 +99,7 @@ end
 
 -- Check if player can access any inventories
 function logistics.is_player_accessible(entity)
+  if not entity then return false end
   return entity and entity.valid
     and entity.prototype.has_flag('player-creation')
     and next(inventories_for(entity)) ~= nil
@@ -187,6 +188,97 @@ function logistics.cleanup_entity_snapshot(entity)
   if entity and entity.unit_number then
     global.entity_snapshots[entity.unit_number] = nil
   end
+end
+
+-- Inventory-name lookup (cache once)
+local inv_name_cache = nil
+local function get_inv_name(idx)
+  if not inv_name_cache then
+    inv_name_cache = {}
+    for name, i in pairs(defines.inventory) do
+      inv_name_cache[i] = name
+    end
+  end
+  return inv_name_cache[idx] or ""
+end
+
+-- Classify an inventory index as “input” vs “output”
+local function is_input_idx(idx)
+  local n = get_inv_name(idx)
+  return n:find("input") or n:find("source")
+end
+local function is_output_idx(idx)
+  local n = get_inv_name(idx)
+  return n:find("result") or n:find("output")
+end
+
+--- Snapshots for GUI-open: player + entity’s input/output inventories
+-- @param player LuaPlayer
+-- @param entity LuaEntity
+-- @return { player = {item→count}, inputs = {item→count}, outputs = {item→count} }
+function logistics.gui_snapshot(player, entity)
+  local snap = { player = {}, inputs = {}, outputs = {} }
+
+  -- player bags
+  snap.player = logistics.get_player_inventory_contents(player)
+
+  -- split entity inventories
+  for idx, contents in pairs(logistics.get_inventory_contents(entity)) do
+    if is_input_idx(idx) then
+      for item, cnt in pairs(contents) do
+        snap.inputs[item] = (snap.inputs[item] or 0) + cnt
+      end
+    elseif is_output_idx(idx) then
+      for item, cnt in pairs(contents) do
+        snap.outputs[item] = (snap.outputs[item] or 0) + cnt
+      end
+    end
+  end
+
+  return snap
+end
+
+--- Compute everything that moved while GUI was open
+-- @param before table from gui_snapshot
+-- @param after  table from gui_snapshot
+-- @param crafted optional table of crafted-item counts to ignore
+-- @return {
+--    inserted = {item→count},   -- player → entity
+--    extracted = {item→count},  -- entity → player
+--    machine_consumed = {…},    -- inputs consumed by machine
+--    machine_produced = {…}     -- outputs produced by machine
+-- }
+function logistics.gui_compute_transfers(before, after, crafted)
+  local transfers = {
+    inserted        = {},
+    extracted       = {},
+    machine_consumed = {},
+    machine_produced = {}
+  }
+
+  -- 1) player delta
+  local pd = logistics.diff_tables(before.player, after.player)
+  -- subtract crafts
+  if crafted then
+    for item, cnt in pairs(crafted) do
+      pd[item] = (pd[item] or 0) - cnt
+    end
+  end
+  for item, delta in pairs(pd) do
+    if delta < 0 then
+      transfers.inserted[item] = -delta
+    elseif delta > 0 then
+      transfers.extracted[item] = delta
+    end
+  end
+
+  -- 2) machine internal
+  local in_diff  = logistics.diff_tables(before.inputs,  after.inputs)
+  local out_diff = logistics.diff_tables(before.outputs, after.outputs)
+  for item, d in pairs(in_diff)  do if d < 0 then transfers.machine_consumed[item] = -d end end
+  for item, d in pairs(out_diff) do if d > 0 then transfers.machine_produced[item] = d end end
+
+  return transfers
 end
 
 return logistics
