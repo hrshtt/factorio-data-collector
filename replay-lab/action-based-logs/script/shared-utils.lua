@@ -44,7 +44,7 @@ function shared_utils.get_player_context(player)
   end
   
   -- What the player is currently doing
-  if player.selected then
+  if player.selected and player.selected.valid then
     context.selected = player.selected
     context.selected_x = string.format("%.1f", player.selected.position.x)
     context.selected_y = string.format("%.1f", player.selected.position.y)
