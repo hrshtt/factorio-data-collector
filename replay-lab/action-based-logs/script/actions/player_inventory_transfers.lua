@@ -268,6 +268,7 @@ local function assure_partial_gui(idx, player, entity)
   global.gui_sessions = global.gui_sessions or {}
   global.gui_sessions[idx] = {
     craft = {},                          -- will collect on_player_crafted_item
+    prerequisites_to_ignore = {},
     snap  = logistics.gui_snapshot(player, entity),  -- player + inputs + outputs
   }
 end
@@ -281,12 +282,18 @@ function gui_transfer_logic.register_events(event_dispatcher)
     if ev.gui_type ~= defines.gui_type.entity then return end
     local p = game.get_player(ev.player_index)
     global.gui_sessions = global.gui_sessions or {}
-    global.gui_sessions[p.index] = {
+    global.gui_sessions[ev.player_index] = {
       snap   = logistics.gui_snapshot(p, ev.entity),
       craft  = {}
     }
-
     assure_partial_gui(ev.player_index, p, ev.entity)
+    if not p then return end
+    if not p.crafting_queue then return end
+    
+    for _, entry in ipairs(p.crafting_queue) do
+      global.gui_sessions[ev.player_index].prerequisites_to_ignore[entry.recipe] = not entry.prerequisite
+    end
+
   end)
 
   -- crafting: record so we can ignore those items
@@ -294,7 +301,9 @@ function gui_transfer_logic.register_events(event_dispatcher)
     local s = global.gui_sessions[ev.player_index]; if not s then return end
     local name  = (ev.item_stack and ev.item_stack.name)  or ev.item_name
     local count = (ev.item_stack and ev.item_stack.count) or ev.item_count or 0
-    s.craft[name] = (s.craft[name] or 0) + count
+    if s.prerequisites_to_ignore[name] then
+      s.craft[name] = (s.craft[name] or 0) + count
+    end
   end)
 
   -- close: compute & emit

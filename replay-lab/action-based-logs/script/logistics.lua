@@ -255,18 +255,18 @@ function logistics.gui_compute_transfers(before, after, crafted)
     machine_consumed = {},
     machine_produced = {}
   }
-
-  -- 1) player delta
-  local pd = logistics.diff_tables(before.player, after.player)
   -- subtract crafts
   if crafted then
     for item, cnt in pairs(crafted) do
-      pd[item] = (pd[item] or 0) - cnt
+      before.player[item] = (before.player[item] or 0) + cnt
     end
   end
+
+  -- 1) player delta
+  local pd = logistics.diff_tables(before.player, after.player)
   for item, delta in pairs(pd) do
     if delta < 0 then
-      transfers.inserted[item] = -delta
+      transfers.inserted[item] = delta
     elseif delta > 0 then
       transfers.extracted[item] = delta
     end
