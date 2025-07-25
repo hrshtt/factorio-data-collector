@@ -2,7 +2,20 @@ M = {}
 
 local serialize = require('script.serialize')
 
-local function get_entities(player_index, radius, entity_names_json, position_x, position_y)
+local function dump(o)
+    if type(o) == 'table' then
+       local s = '{ '
+       for k,v in pairs(o) do
+          if type(k) ~= 'number' then k = '"'..k..'"' end
+          s = s .. '['..k..'] = ' .. dump(v) .. ','
+       end
+       return s .. '} '
+    else
+       return tostring(o)
+    end
+ end
+
+function M.get_entities(player_index, radius, entity_names_json, position_x, position_y)
     local player = game.players[player_index]
     local position
     if position_x and position_y then
@@ -39,7 +52,5 @@ local function get_entities(player_index, radius, entity_names_json, position_x,
     end
     return dump(result)
 end
-
-M.get_entities = get_entities
 
 return M

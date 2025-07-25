@@ -1,6 +1,6 @@
 M = {}
 
-function dump(o)
+local function dump(o)
     if type(o) == 'table' then
        local s = '{ '
        for k,v in pairs(o) do
@@ -13,7 +13,7 @@ function dump(o)
     end
  end
 
-function inspect_inventory(player_index, is_character_inventory, x, y, entity, all_players)
+function M.inspect_inventory(player_index, is_character_inventory, x, y, entity, all_players)
     local position = {x=x, y=y}
     local player = game.players[player_index]
     local surface = player.surface
@@ -21,15 +21,6 @@ function inspect_inventory(player_index, is_character_inventory, x, y, entity, a
     local automatic_close = true
 
     local function get_player_inventory_items(player)
-       -- if not is_fast then
-       --     player.opened = player
-       --     script.on_nth_tick(60, function()
-       --         if automatic_close == true then
-       --             player.opened = nil
-       --             automatic_close = false
-       --         end
-       --     end)
-       -- end
 
        local inventory = player.get_main_inventory()
        if not inventory or not inventory.valid then
@@ -142,7 +133,7 @@ function inspect_inventory(player_index, is_character_inventory, x, y, entity, a
     end
 end
 
-function inspect_inventory2(player_index, is_character_inventory, x, y)
+local function inspect_inventory2(player_index, is_character_inventory, x, y)
     local position = {x=x, y=y}
     local player = game.players[player_index]
     local surface = player.surface
@@ -233,7 +224,7 @@ function inspect_inventory2(player_index, is_character_inventory, x, y)
     end
 end
 
-M.inspect_inventory = inspect_inventory
-M.inspect_inventory2 = inspect_inventory2
+-- M.inspect_inventory = inspect_inventory
+-- M.inspect_inventory2 = inspect_inventory2
 
 return M

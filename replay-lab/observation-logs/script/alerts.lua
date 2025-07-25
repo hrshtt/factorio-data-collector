@@ -153,27 +153,6 @@ local function has_ingredients(entity)
     return true
 end
 
--- Define a function to check if the entity is a drill and has space to output
---function has_output_space(entity)
---    if entity.type == "mining-drill" and entity.mining_target then
---        local output_inventory = entity.get_output_inventory()
---        if output_inventory and output_inventory.is_full() then
---            return false
---        end
---    end
---    if entity.type == "mining-drill" then
---        local resource = entity.surface.find_entities_filtered{position = entity.position, type = "resource"}[1]
---        local output_inventory = entity.get_output_inventory()
---        local drop_position = entity.drop_position
---        local items_on_ground = entity.surface.find_entities_filtered{area = {{drop_position.x - 0.5, drop_position.y - 0.5}, {drop_position.x + 0.5, drop_position.y + 0.5}}, type = "item-entity"}
---
---        if #items_on_ground >= 1 or (resource and output_inventory and not output_inventory.is_empty() and output_inventory and output_inventory.can_insert(resource.prototype.mined_item) == false) then
---            return false
---        end
---    end
---    return true
---end
-
 local function has_output_space(entity)
     if entity.status == defines.entity_status.waiting_for_space_in_destination then
         return false

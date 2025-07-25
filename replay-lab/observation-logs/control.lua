@@ -23,7 +23,7 @@ local nearest = require("script.observations.nearest")
 -- ============================================================================
 local FLUSH_EVERY = 600        -- 10 s at 60 UPS
 local OBSERVATION_INTERVALS = {
-  get_entities = 600,           -- Every 10 seconds
+  get_entities = 60,           -- Every 1 seconds
   get_research_progress = 600,  -- Every 10 seconds
   inspect_inventory = 600,      -- Every 10 seconds
   nearest = 600                 -- Every 10 seconds
@@ -80,7 +80,7 @@ function observation_logger.log_get_entities(event)
       shared_utils.add_player_context_if_missing(rec, player)
       
       -- Call the observation script with default parameters
-      local radius = 10
+      local radius = 100
       local entity_names_json = "[]"  -- Empty array for all entities
       local position_x = player.position.x
       local position_y = player.position.y

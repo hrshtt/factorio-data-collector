@@ -10,7 +10,7 @@
 -- ============================================================================
 -- CONFIGURATION
 -- ============================================================================
-local SHOW_EVERY = 60      -- once per in-game second (60 UPS)
+local SHOW_EVERY = 10      -- once per in-game second (60 UPS)
 local TTL = 60             -- time to live (shorter than SHOW_EVERY to prevent pile-up)
 
 -- ============================================================================

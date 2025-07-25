@@ -1,6 +1,6 @@
 M = {}
 
-function nearest(player_index, resource)
+function M.nearest(player_index, resource)
     local player = game.players[player_index]
 
     local function normalize_resource_name(resource)
@@ -71,7 +71,5 @@ function nearest(player_index, resource)
 
     return find_nearest(player, normalized_resource)
 end
-
-M.nearest = nearest
 
 return M

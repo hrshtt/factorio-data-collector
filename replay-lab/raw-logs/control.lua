@@ -12,6 +12,7 @@
 -- ============================================================================
 local shared_utils = require("script.shared-utils")
 local tick_overlay = require("script.tick_overlay")
+local logistics = require("script.logistics")
 
 -- ============================================================================
 -- CONFIGURATION
@@ -59,22 +60,47 @@ end
 local raw_logger = {}
 
 function raw_logger.log_event(event_name, event_data)
+  local INSERTABLE_EVENTS_ONLY = false
+  local CRAFTING_QUEUE_DATA = false
+  local SELECTED_ENTITY_DATA = false
+
   -- Add event name to the event data
   event_data.event_name = event_name
+  if not event_data.player_index then return end
+  local player = game.get_player(event_data.player_index)
+  if not player then return end
   
   -- Auto-enhance with common context if available (generic, no bespoke formatting)
   if event_data.player_index then
-    local player = game.players[event_data.player_index]
     if player and player.valid then
       -- Add player context
       local ctx = shared_utils.get_player_context(player)
-      if ctx.selected_entity then
+      if SELECTED_ENTITY_DATA and ctx.selected_entity then
         event_data.selected_entity = ctx.selected_entity
+        event_data.selected_entity_key = ctx.selected_entity.name .. " (" .. string.format("%.1f", ctx.selected_entity.position.x) .. ", " .. string.format("%.1f", ctx.selected_entity.position.y) .. ")"
         ctx.selected_entity = nil
+      end
+      if INSERTABLE_EVENTS_ONLY and not logistics.can_be_inserted(ctx.cursor_item) then
+        return
       end
       event_data.player = ctx
       event_data.player.index = event_data.player_index
     end
+  end
+
+  if CRAFTING_QUEUE_DATA and player.crafting_queue then
+    event_data.crafting_queue = player.crafting_queue
+    event_data.crafting_queue_size = player.crafting_queue_size
+    event_data.crafting_queue_progress = player.crafting_queue_progress
+  end
+
+  if event_data.recipe then
+    event_data.recipe = {
+      name = event_data.recipe.name,
+      category = event_data.recipe.category,
+      ingredients = event_data.recipe.ingredients,
+      products = event_data.recipe.products,
+    }
   end
   
   -- Add entity name if entity exists
@@ -397,21 +423,21 @@ function main.initialize()
   -- end)
   
   -- Cutscene events
-  event_dispatcher.register_handler(defines.events.on_cutscene_cancelled, function(e)
-    raw_logger.log_event("on_cutscene_cancelled", e)
-  end)
+  -- event_dispatcher.register_handler(defines.events.on_cutscene_cancelled, function(e)
+  --   raw_logger.log_event("on_cutscene_cancelled", e)
+  -- end)
   
-  event_dispatcher.register_handler(defines.events.on_cutscene_finished, function(e)
-    raw_logger.log_event("on_cutscene_finished", e)
-  end)
+  -- event_dispatcher.register_handler(defines.events.on_cutscene_finished, function(e)
+  --   raw_logger.log_event("on_cutscene_finished", e)
+  -- end)
   
-  event_dispatcher.register_handler(defines.events.on_cutscene_started, function(e)
-    raw_logger.log_event("on_cutscene_started", e)
-  end)
+  -- event_dispatcher.register_handler(defines.events.on_cutscene_started, function(e)
+  --   raw_logger.log_event("on_cutscene_started", e)
+  -- end)
   
-  event_dispatcher.register_handler(defines.events.on_cutscene_waypoint_reached, function(e)
-    raw_logger.log_event("on_cutscene_waypoint_reached", e)
-  end)
+  -- event_dispatcher.register_handler(defines.events.on_cutscene_waypoint_reached, function(e)
+  --   raw_logger.log_event("on_cutscene_waypoint_reached", e)
+  -- end)
   
   -- Deconstruction events
   event_dispatcher.register_handler(defines.events.on_cancelled_deconstruction, function(e)
@@ -722,9 +748,9 @@ function main.initialize()
     raw_logger.log_event("on_player_crafted_item", e)
   end)
   
-  event_dispatcher.register_handler(defines.events.on_player_created, function(e)
-    raw_logger.log_event("on_player_created", e)
-  end)
+  -- event_dispatcher.register_handler(defines.events.on_player_created, function(e)
+  --   raw_logger.log_event("on_player_created", e)
+  -- end)
   
   event_dispatcher.register_handler(defines.events.on_player_cursor_stack_changed, function(e)
     raw_logger.log_event("on_player_cursor_stack_changed", e)
@@ -766,21 +792,21 @@ function main.initialize()
     raw_logger.log_event("on_player_gun_inventory_changed", e)
   end)
   
-  event_dispatcher.register_handler(defines.events.on_player_input_method_changed, function(e)
-    raw_logger.log_event("on_player_input_method_changed", e)
-  end)
+  -- event_dispatcher.register_handler(defines.events.on_player_input_method_changed, function(e)
+  --   raw_logger.log_event("on_player_input_method_changed", e)
+  -- end)
   
-  event_dispatcher.register_handler(defines.events.on_player_joined_game, function(e)
-    raw_logger.log_event("on_player_joined_game", e)
-  end)
+  -- event_dispatcher.register_handler(defines.events.on_player_joined_game, function(e)
+  --   raw_logger.log_event("on_player_joined_game", e)
+  -- end)
   
-  event_dispatcher.register_handler(defines.events.on_player_kicked, function(e)
-    raw_logger.log_event("on_player_kicked", e)
-  end)
+  -- event_dispatcher.register_handler(defines.events.on_player_kicked, function(e)
+  --   raw_logger.log_event("on_player_kicked", e)
+  -- end)
   
-  event_dispatcher.register_handler(defines.events.on_player_left_game, function(e)
-    raw_logger.log_event("on_player_left_game", e)
-  end)
+  -- event_dispatcher.register_handler(defines.events.on_player_left_game, function(e)
+  --   raw_logger.log_event("on_player_left_game", e)
+  -- end)
   
   event_dispatcher.register_handler(defines.events.on_player_main_inventory_changed, function(e)
     raw_logger.log_event("on_player_main_inventory_changed", e)
@@ -806,13 +832,13 @@ function main.initialize()
     raw_logger.log_event("on_player_pipette", e)
   end)
   
-  event_dispatcher.register_handler(defines.events.on_player_promoted, function(e)
-    raw_logger.log_event("on_player_promoted", e)
-  end)
+  -- event_dispatcher.register_handler(defines.events.on_player_promoted, function(e)
+  --   raw_logger.log_event("on_player_promoted", e)
+  -- end)
   
-  event_dispatcher.register_handler(defines.events.on_player_removed, function(e)
-    raw_logger.log_event("on_player_removed", e)
-  end)
+  -- event_dispatcher.register_handler(defines.events.on_player_removed, function(e)
+  --   raw_logger.log_event("on_player_removed", e)
+  -- end)
   
   event_dispatcher.register_handler(defines.events.on_player_repaired_entity, function(e)
     raw_logger.log_event("on_player_repaired_entity", e)
