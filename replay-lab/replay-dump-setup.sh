@@ -8,7 +8,7 @@ set -e  # Exit on any error
 # Function to print usage
 usage() {
     echo "Usage: $0 <target_directory> [script_type]"
-    echo "Script types: simple, state, action (default: action)"
+    echo "Script types: action, observation, raw (default: action)"
     echo "Example: $0 ./saves/4_12_54 action"
     exit 1
 }
@@ -42,12 +42,6 @@ echo "✓ Found replay.dat in target directory"
 
 # Set scripts directory based on script type
 case "$SCRIPT_TYPE" in
-    "simple")
-        SCRIPTS_DIR="./replay-lab/simple-logs"
-        ;;
-    "state")
-        SCRIPTS_DIR="./replay-lab/state-based-logs"
-        ;;
     "action")
         SCRIPTS_DIR="./replay-lab/action-based-logs"
         ;;
