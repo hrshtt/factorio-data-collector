@@ -123,6 +123,10 @@ echo "✓ Copied $ZIP_NAME to $FACTORIO_SAVES"
 rm "$ZIP_NAME"
 echo "✓ Cleaned up local zip file"
 
+echo "Clearing factorio-current.log"
+echo "" > "$HOME/Library/Application Support/factorio/factorio-current.log"
+echo "✓ Cleared factorio-current.log"
+
 echo ""
 echo "🎉 Operation completed successfully!"
 echo "   - Used $SCRIPT_TYPE logging scripts from $SCRIPTS_DIR"

@@ -246,6 +246,16 @@ end)
 -- REPLAY MARKERS
 -- ============================================================================
 -- Register additional system handlers after module initialization
+
+event_dispatcher.register_handler(defines.events.on_tick, function()
+  event_dispatcher.register_nth_tick_handler(1, function(event)
+    if event.tick == 1 then
+      shared_utils.clear_output_directory()
+      script.on_nth_tick(1, nil)
+    end
+  end)
+end)
+
 function main.register_system_handlers()
   -- First-tick detection for replay start
   event_dispatcher.register_handler(defines.events.on_tick, function(event)

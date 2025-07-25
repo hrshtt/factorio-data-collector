@@ -6,6 +6,7 @@
 --@license MIT
 
 local shared_utils = {}
+local OUT_DIR = "replay-logs/"
 
 -- ============================================================================
 -- UTILITY FUNCTIONS
@@ -154,7 +155,6 @@ function shared_utils.flush_category_buffer(category_name)
   local buffer = global.category_buffers[category_name]
   if not buffer or #buffer.buf == 0 then return end
   
-  local OUT_DIR = "replay-logs/"
   local LOG_PATH = OUT_DIR .. category_name .. ".jsonl"
   
   -- Check if this is the first write of this session
@@ -174,6 +174,10 @@ function shared_utils.flush_all_buffers()
       shared_utils.flush_category_buffer(category_name)
     end
   end
+end
+
+function shared_utils.clear_output_directory()
+  game.remove_path(OUT_DIR)
 end
 
 return shared_utils 
