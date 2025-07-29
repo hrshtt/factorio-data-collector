@@ -8,14 +8,15 @@ from typing import Dict, Any, List
 from fle.env import FactorioInstance
 from fle.env.entities import Direction, Position
 from fle.commons.cluster_ips import get_local_container_ips
+from log_analyzer import analyze_logs_example
 
 
 class TickScheduler:
     """Handles real-time tick scheduling at 60 ticks per second."""
     
-    def __init__(self):
+    def __init__(self, speed: float = 1.0):
         self.start_time = None
-        self.tick_duration = 1.0 / 60.0  # 60 ticks per second
+        self.tick_duration = 1.0 / 60.0 / speed  # 60 ticks per second
         
     def start(self):
         """Start the tick timer."""
@@ -31,12 +32,12 @@ class TickScheduler:
         
         if target_time > current_time:
             sleep_duration = target_time - current_time
-            print(f"Waiting {sleep_duration:.3f}s for tick {target_tick}")
+            print(f"\033[92mWaiting {sleep_duration:.3f}s for tick {target_tick}\033[0m")
             time.sleep(sleep_duration)
         else:
             # If we're behind schedule, note it but don't wait
             delay = current_time - target_time
-            print(f"Warning: Tick {target_tick} is {delay:.3f}s behind schedule")
+            print(f"\033[94mWarning: Tick {target_tick} is {delay:.3f}s behind schedule\033[0m")
             
     def get_current_tick(self) -> int:
         """Get the current tick based on elapsed time."""
@@ -44,6 +45,50 @@ class TickScheduler:
             return 0
         elapsed = time.time() - self.start_time
         return int(elapsed / self.tick_duration)
+
+
+# Global file handles for logging
+entities_log_file = None
+inventory_log_file = None
+
+
+def initialize_logging(log_dir: str = "logs"):
+    """Initialize logging files for entities and inventory data."""
+    global entities_log_file, inventory_log_file
+    
+    # Create logs directory if it doesn't exist
+    log_path = Path(log_dir)
+    log_path.mkdir(exist_ok=True)
+    
+    # Initialize log files
+    entities_log_file = open(log_path / "entities_log.jsonl", "w")
+    inventory_log_file = open(log_path / "inventory_log.jsonl", "w")
+    
+    print(f"Initialized logging to {log_path}/entities_log.jsonl and {log_path}/inventory_log.jsonl")
+
+
+def cleanup_logging():
+    """Close logging files."""
+    global entities_log_file, inventory_log_file
+    
+    if entities_log_file:
+        entities_log_file.close()
+        entities_log_file = None
+    
+    if inventory_log_file:
+        inventory_log_file.close()
+        inventory_log_file = None
+
+
+def log_data(log_file, tick: int, data: Any):
+    """Log data to a file in JSONL format for pandas reading."""
+    if log_file:
+        log_entry = {
+            "tick": tick,
+            "data": data
+        }
+        log_file.write(json.dumps(log_entry) + "\n")
+        log_file.flush()  # Ensure data is written immediately
 
 
 def parse_function_call(call_string: str) -> tuple[str, Dict[str, Any]]:
@@ -155,7 +200,7 @@ def create_factorio_instance() -> FactorioInstance:
     return instance
 
 
-def execute_action(instance: FactorioInstance, func_name: str, args: Dict[str, Any]) -> Any:
+def execute_action(instance: FactorioInstance, func_name: str, args: Dict[str, Any], tick: int, enable_logging: bool = False) -> Any:
     """Execute an action on the FLE instance namespace."""
     namespace = instance.namespace
     
@@ -365,24 +410,56 @@ def execute_action(instance: FactorioInstance, func_name: str, args: Dict[str, A
             
             filtered_args = new_args
         
-        # Call the function with the filtered arguments
-        #entities = namespace.get_entities()
-        #print(entities)
+        elif func_name == 'set_research':
+            # For set_research, convert technology name to Technology object
+            new_args = {}
+            
+            if 'technology' in filtered_args:
+                from fle.env.game_types import Technology
+                technology_name = filtered_args['technology']
+                
+                # Try to convert string to Technology enum
+                try:
+                    # Check if it's already a Technology object
+                    if hasattr(technology_name, 'value'):
+                        new_args['technology'] = technology_name
+                    else:
+                        # Convert string to Technology enum by name
+                        new_args['technology'] = Technology(technology_name)
+                except (ValueError, AttributeError):
+                    # Fallback: pass the technology name directly if enum conversion fails
+                    print(f"Warning: No Technology enum found for '{technology_name}', using string")
+                    new_args['technology'] = technology_name
+            
+            filtered_args = new_args
+        
+        # Log entities and inventory data before action execution (only if logging is enabled)
+        if enable_logging:
+            global entities_log_file, inventory_log_file
+            
+            # Get updated state after action
+            updated_entities = namespace.get_entities(radius=100)
+            updated_inventory = namespace.inspect_inventory().__dict__
+            
+            serializable_entities = [str(entity) for entity in updated_entities]
+            # Log the data
+            log_data(entities_log_file, tick, serializable_entities)
+            log_data(inventory_log_file, tick, updated_inventory)
+
+        # Execute the action
         result = func(**filtered_args)
         print(f"Executed {func_name} with args {filtered_args}")
+        
         return result
     except Exception as e:
-        print(f"Error executing {func_name} with args {filtered_args}: {e}")
         if 'Could not harvest. LuaEntity' in str(e):
             pass
         else:
-            import sys
-            import ipdb; ipdb.set_trace()
-            #sys.exit(1)
-            return None
+            print(f"\033[91mError executing {func_name} with args {filtered_args}: {e}\033[0m")
+            raise e
 
 
-def execute_events_from_file(events_file_path: str):
+def execute_events_from_file(events_file_path: str, enable_logging: bool = False, speed: float = 1.0, diff_thread: bool = False):
     """Main function to load and execute events from a JSONL file with real-time tick scheduling."""
     # Load events
     events = load_events(events_file_path)
@@ -396,13 +473,22 @@ def execute_events_from_file(events_file_path: str):
     instance.reset()
     print("Factorio instance created and reset")
     
-    # Create tick scheduler
-    scheduler = TickScheduler()
+    # Initialize logging only if enabled
+    if enable_logging:
+        initialize_logging()
+        print("Logging enabled - data will be saved to logs/")
+    else:
+        print("Logging disabled - no data will be saved")
+    
+    # Create tick scheduler with specified speed
+    scheduler = TickScheduler(speed)
+    instance.rcon_client.send_command('/c game.speed = ' + str(speed))
     
     try:
         # Start the real-time scheduler
         scheduler.start()
-        print(f"Started real-time execution at {scheduler.tick_duration*1000:.1f}ms per tick (60 TPS)")
+        print(f"Started real-time execution at {scheduler.tick_duration*1000:.1f}ms per tick ({60 * speed:.1f} TPS)")
+        print(f"Execution mode: {'Separate threads' if diff_thread else 'Same thread'}")
         
         # Execute events in order with proper timing
         for i, event in enumerate(events):
@@ -421,20 +507,24 @@ def execute_events_from_file(events_file_path: str):
             try:
                 func_name, args = parse_function_call(call)
                 
-                # Execute the action in a separate thread to avoid blocking the scheduler
-                # for long-running operations
-                def execute_async():
-                    execute_action(instance, func_name, args)
-                
-                #thread = threading.Thread(target=execute_async)
-                #thread.start()
-                execute_async()
-                # For most actions, we don't need to wait for completion
-                # But for critical actions, you might want to join the thread
-                # thread.join()
+                # Execute the action based on threading preference
+                if diff_thread:
+                    # Execute in a separate thread to avoid blocking the scheduler
+                    # for long-running operations
+                    def execute_async():
+                        execute_action(instance, func_name, args, tick, enable_logging)
+                    
+                    thread = threading.Thread(target=execute_async)
+                    thread.start()
+                    # For most actions, we don't need to wait for completion
+                    # But for critical actions, you might want to join the thread
+                    #thread.join()
+                else:
+                    # Execute directly in the same thread (default)
+                    execute_action(instance, func_name, args, tick, enable_logging)
                 
             except Exception as e:
-                print(f"Error processing event {i+1}: {e}")
+                print(f"\033[91mError processing event {i+1}: {e}\033[0m")
                 continue
         
         # Wait a bit for any remaining async actions to complete
@@ -451,25 +541,38 @@ def execute_events_from_file(events_file_path: str):
     except Exception as e:
         print(f"Error during execution: {e}")
     finally:
-        # Cleanup
+        # Cleanup logging only if it was enabled
+        if enable_logging:
+            cleanup_logging()
         instance.cleanup()
-        print("Instance cleaned up")
+        print("Instance and logging cleaned up")
 
 
 if __name__ == "__main__":
-    # Parse command line arguments
+    # Add command line option for log analysis
     import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument('--max-time', type=int, default=10000,
                        help='Maximum tick time to include in events file')
+    parser.add_argument('--analyze-logs', action='store_true',
+                       help='Analyze existing log files instead of running simulation')
+    parser.add_argument('--enable-logging', action='store_true',
+                       help='Enable logging of entities and inventory data to files')
+    parser.add_argument('--speed', type=float, default=1.0,
+                       help='Game speed multiplier (default: 1.0, higher = faster)')
+    parser.add_argument('--diff-thread', action='store_true',
+                       help='Execute actions in separate threads instead of same thread (may cause timing issues)')
     args = parser.parse_args()
 
-    # Default to the combined_events_py.jsonl file in the same directory
-    current_dir = Path(__file__).parent
-    events_file = current_dir / "_runnable_actions" / f"combined_events_py_{args.max_time}.jsonl"
-    
-    if events_file.exists():
-        execute_events_from_file(str(events_file))
+    if args.analyze_logs:
+        analyze_logs_example()
     else:
-        print(f"Events file not found: {events_file}")
-        print("Please provide the path to your events JSONL file")
+        # Default to the combined_events_py.jsonl file in the same directory
+        current_dir = Path(__file__).parent
+        events_file = current_dir / "_runnable_actions" / f"combined_events_py_{args.max_time}.jsonl"
+        
+        if events_file.exists():
+            execute_events_from_file(str(events_file), enable_logging=args.enable_logging, speed=args.speed, diff_thread=args.diff_thread)
+        else:
+            print(f"Events file not found: {events_file}")
+            print("Please provide the path to your events JSONL file")
