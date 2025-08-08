@@ -62,7 +62,7 @@ local raw_logger = {}
 function raw_logger.log_event(event_name, event_data)
   local INSERTABLE_EVENTS_ONLY = false
   local CRAFTING_QUEUE_DATA = false
-  local SELECTED_ENTITY_DATA = false
+  local SELECTED_ENTITY_DATA = true
 
   -- Add event name to the event data
   event_data.event_name = event_name

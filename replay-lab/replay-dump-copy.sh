@@ -8,6 +8,7 @@ TARGET_DIR="./factorio_replays"
 show_usage() {
     echo "Usage: $0 [-f|--force]"
     echo "  -f, --force    Overwrite existing replay-logs directory without renaming"
+    echo "  -n, --name NAME   Use custom target directory name (no spaces)"
     echo "  -h, --help     Show this help message"
 }
 
@@ -38,12 +39,22 @@ extract_timestamp() {
 
 # Parse command line arguments
 FORCE_OVERWRITE=false
+CUSTOM_NAME=""
 
 while [[ $# -gt 0 ]]; do
     case $1 in
         -f|--force)
             FORCE_OVERWRITE=true
             shift
+            ;;
+        -n|--name)
+            if [ -z "$2" ]; then
+                echo "Error: --name requires a value"
+                show_usage
+                exit 1
+            fi
+            CUSTOM_NAME="$2"
+            shift 2
             ;;
         -h|--help)
             show_usage
@@ -67,6 +78,28 @@ fi
 if [ ! -d "$TARGET_DIR" ]; then
     echo "Creating target directory: $TARGET_DIR"
     mkdir -p "$TARGET_DIR"
+fi
+
+# If custom name provided, use it (overrides force/timestamp naming)
+if [ -n "$CUSTOM_NAME" ]; then
+    if [[ "$CUSTOM_NAME" == *" "* ]]; then
+        echo "Error: Custom name cannot contain spaces"
+        exit 1
+    fi
+    TARGET_REPLAY_DIR="$TARGET_DIR/$CUSTOM_NAME"
+    if [ "$FORCE_OVERWRITE" = true ]; then
+        echo "Copying with force overwrite to: $TARGET_REPLAY_DIR"
+        if [ -d "$TARGET_REPLAY_DIR" ]; then
+            rm -rf "$TARGET_REPLAY_DIR"
+        fi
+        cp -r "$SOURCE_PATH" "$TARGET_REPLAY_DIR"
+        echo "Successfully copied replay-logs directory (overwritten)"
+    else
+        echo "Copying to: $TARGET_REPLAY_DIR"
+        cp -r "$SOURCE_PATH" "$TARGET_REPLAY_DIR"
+        echo "Successfully copied replay-logs directory as: $(basename "$TARGET_REPLAY_DIR")"
+    fi
+    exit 0
 fi
 
 # Determine target directory name
