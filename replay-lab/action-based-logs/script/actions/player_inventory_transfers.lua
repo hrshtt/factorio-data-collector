@@ -35,7 +35,6 @@ local fast_transfer_logic = {}
 -- Storage for tracking current session per player (single session per player)
 local current_sessions = {}
 
--- Helper function to create a transfer record
 local function create_transfer_record(player, action_type, entity, item_deltas, event_name, is_no_op)
   local rec = shared_utils.create_base_record(action_type, {
     tick = game.tick,
@@ -63,6 +62,15 @@ local function create_transfer_record(player, action_type, entity, item_deltas, 
   end
 
   return rec
+end
+
+-- Helper to build a stable entity key for de-duping
+local function entity_key(entity)
+  if not entity or not entity.valid then return nil end
+  local x = entity.position and string.format("%.1f", entity.position.x) or "?"
+  local y = entity.position and string.format("%.1f", entity.position.y) or "?"
+  local name = entity.name or "?"
+  return name .. "|" .. x .. "|" .. y
 end
 
 function fast_transfer_logic.on_selected_entity_changed(event)
@@ -129,6 +137,10 @@ function fast_transfer_logic.on_player_fast_transferred(event)
   local has_changes = next(item_deltas) ~= nil
   local is_no_op = not has_changes
 
+  -- Mark this fast transfer for same-tick de-dupe in cursor logic
+  global.last_fast_transfer = global.last_fast_transfer or {}
+  global.last_fast_transfer[event.player_index] = { tick = event.tick, key = entity_key(entity) }
+
   if event.from_player ~= nil then
     local action_type = "insert_item"
     if event.from_player == false then
@@ -150,6 +162,7 @@ end
 function fast_transfer_logic.on_player_left_game(event)
   -- Clear current session for the player who left
   current_sessions[event.player_index] = nil
+  if global.last_fast_transfer then global.last_fast_transfer[event.player_index] = nil end
 end
 
 function fast_transfer_logic.cleanup_old_sessions()
@@ -186,6 +199,26 @@ local function get_item_count(player_index, item_name)
     return nil
   end
   return global.item_counts[player_index][item_name] or 0
+end
+
+function cursor_stack_logic.on_selected_entity_changed(event)
+  if not shared_utils.is_player_event(event) then return end
+  local player = game.players[event.player_index]
+  if not player or not player.valid then return end
+
+  -- Get current cursor + selection context
+  local ctx = shared_utils.get_player_context(player)
+  if not ctx.cursor_item then return end
+
+  local selected_entity = ctx.selected
+  if not selected_entity or not selected_entity.valid then return end
+  if not logistics.is_player_accessible(selected_entity) then return end
+  if not logistics.can_be_inserted(ctx.cursor_item) then return end
+
+  -- Seed baseline: player inventory count for the cursor item + cursor stack count (post-select)
+  local p_inventory = logistics.get_player_inventory_contents(player)
+  set_item_count(event.player_index, ctx.cursor_item,
+    (p_inventory[ctx.cursor_item] or 0) + ctx.cursor_count)
 end
 
 function cursor_stack_logic.on_player_cursor_stack_changed(event)
@@ -241,7 +274,18 @@ function cursor_stack_logic.on_player_cursor_stack_changed(event)
   -- if the item delta is less than -2, its not part of the Z press event tracking
   -- if the item delta is more than 0, means item was sourced from somewhere else
   if item_delta < -2 or item_delta >= 0 then return end
-  
+
+  -- Same-tick de-dupe: if a fast transfer occurred on this entity this tick, skip Z-press emit
+  do
+    local lft = global.last_fast_transfer and global.last_fast_transfer[event.player_index]
+    if lft then
+      local ek = entity_key(selected_entity)
+      if lft.tick == event.tick and lft.key == ek then
+        return
+      end
+    end
+  end
+
   -- Create insert_item record using the helper function
   local rec = create_transfer_record(player, "insert_item", selected_entity, {
     [context.cursor_item] = item_delta,
@@ -254,8 +298,7 @@ function cursor_stack_logic.on_player_cursor_stack_changed(event)
 end
 
 function cursor_stack_logic.on_player_left_game(event)
-  -- Clean up cursor state for player
-  cursor_states[event.player_index] = nil
+  if global.item_counts then global.item_counts[event.player_index] = nil end
 end
 
 -- =========================
@@ -348,6 +391,8 @@ function player_inventory_transfers.register_events(event_dispatcher)
   event_dispatcher.register_nth_tick_handler(300, fast_transfer_logic.cleanup_old_sessions)
 
   -- Register the cursor stack events
+  event_dispatcher.register_handler(defines.events.on_selected_entity_changed,
+    cursor_stack_logic.on_selected_entity_changed)
   event_dispatcher.register_handler(defines.events.on_player_cursor_stack_changed,
     cursor_stack_logic.on_player_cursor_stack_changed)
   event_dispatcher.register_handler(defines.events.on_player_left_game, cursor_stack_logic.on_player_left_game)
@@ -364,6 +409,7 @@ function player_inventory_transfers.on_init()
       gui_sessions = {}      -- GUI session tracking per player
     }
   end
+  global.last_fast_transfer = global.last_fast_transfer or {}
   current_sessions = global.player_inventory_transfers.current_sessions
   cursor_states = global.player_inventory_transfers.cursor_states
   gui_sessions = global.gui_sessions
